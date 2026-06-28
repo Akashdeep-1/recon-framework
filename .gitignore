@@ -1,0 +1,34 @@
+# Ignore scan results
+output/*
+logs/*
+
+# Keep the folders in Git
+!output/.gitignore
+!logs/.gitignore
+
+# Environment files
+.env
+.env.*
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Python cache (future-proof)
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
