@@ -238,3 +238,38 @@ run_katana() {
         return 1
     fi
 }
+# Run Nuclei vulnerability scanning
+run_nuclei() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running Nuclei"
+
+    if ! command_exists nuclei; then
+        log_error "Nuclei is not installed."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "URL input file not found: $input_file"
+        return 1
+    fi
+
+    if nuclei \
+        -l "$input_file" \
+        -silent \
+        -jsonl \
+        -o "$output_file"; then
+
+        local count
+        count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
+
+        log_success "Nuclei completed: $count findings"
+
+        return 0
+    else
+        log_error "Nuclei scan failed"
+        return 1
+    fi
+}

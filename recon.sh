@@ -158,6 +158,9 @@ local katana_output="${workspace}/urls/katana.txt"
 extract_live_urls "$live_output" "$clean_urls"
 
 run_katana "$clean_urls" "$katana_output"
+local nuclei_output="${workspace}/nuclei/findings.jsonl"
+
+run_nuclei "$clean_urls" "$nuclei_output"
 local ports_output="${workspace}/ports/naabu.txt"
 
 run_naabu "$dns_output" "$ports_output"
