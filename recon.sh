@@ -26,6 +26,7 @@ source "$BASE_DIR/lib/logger.sh"
 source "$BASE_DIR/lib/helpers.sh"
 source "$BASE_DIR/lib/filesystem.sh"
 source "$BASE_DIR/lib/validation.sh"
+source "$BASE_DIR/lib/plugins.sh"
 # -------------------------------
 # Banner
 # -------------------------------
@@ -130,10 +131,15 @@ main() {
     print_banner
 
     log_info "Target : $DOMAIN"
-
     create_workspace "$DOMAIN"
 
-    log_success "Framework Started"
+local workspace="${OUTPUT_DIR}/${DOMAIN}"
+local subdomain_output="${workspace}/subdomains/subfinder.txt"
+
+log_success "Framework Started"
+
+run_subfinder "$DOMAIN" "$subdomain_output"
+
 
 }
 main
