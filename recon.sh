@@ -152,6 +152,12 @@ run_dnsx "${subdomain_dir}/all.txt" "$dns_output"
 local live_output="${workspace}/live/httpx.txt"
 
 run_httpx "$dns_output" "$live_output"
+local clean_urls="${workspace}/live/urls.txt"
+local katana_output="${workspace}/urls/katana.txt"
+
+extract_live_urls "$live_output" "$clean_urls"
+
+run_katana "$clean_urls" "$katana_output"
 local ports_output="${workspace}/ports/naabu.txt"
 
 run_naabu "$dns_output" "$ports_output"

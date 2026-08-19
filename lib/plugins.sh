@@ -178,3 +178,63 @@ run_naabu() {
         return 1
     fi
 }
+# Extract clean URLs from HTTPX output
+extract_live_urls() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Extracting live URLs"
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "HTTPX output not found: $input_file"
+        return 1
+    fi
+
+    sed -E 's/ \[.*$//' "$input_file" |
+        sed '/^$/d' |
+        sort -u > "$output_file"
+
+    local count
+    count=$(wc -l < "$output_file")
+
+    log_success "Extracted $count live URLs"
+
+    return 0
+}
+
+
+# Crawl live URLs using Katana
+run_katana() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running Katana"
+
+    if ! command_exists katana; then
+        log_error "Katana is not installed or not in PATH."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "Live URL input file not found: $input_file"
+        return 1
+    fi
+
+    if katana \
+        -list "$input_file" \
+        -silent \
+        -o "$output_file"; then
+
+        local count
+        count=$(wc -l < "$output_file")
+
+        log_success "Katana completed: $count URLs discovered"
+
+        return 0
+    else
+        log_error "Katana failed"
+        return 1
+    fi
+}
