@@ -17,19 +17,21 @@ run_subfinder() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
     if subfinder -d "$domain" -silent -o "$output_file"; then
         local count
-
         count=$(wc -l < "$output_file")
 
         log_success "Subfinder completed: $count subdomains found"
-
         return 0
     else
         log_error "Subfinder failed for $domain"
         return 1
     fi
 }
+
+
 # Run Assetfinder for passive subdomain enumeration
 run_assetfinder() {
 
@@ -43,19 +45,22 @@ run_assetfinder() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
     if assetfinder --subs-only "$domain" | sort -u > "$output_file"; then
         local count
-
         count=$(wc -l < "$output_file")
 
         log_success "Assetfinder completed: $count subdomains found"
-
         return 0
     else
         log_error "Assetfinder failed for $domain"
         return 1
     fi
 }
+
+
+# Merge and deduplicate subdomain results
 merge_subdomains() {
 
     local subdomain_dir="$1"
@@ -63,7 +68,10 @@ merge_subdomains() {
 
     log_info "Merging subdomain results"
 
-    cat "$subdomain_dir/subfinder.txt" \
+    mkdir -p "$subdomain_dir"
+
+    cat \
+        "$subdomain_dir/subfinder.txt" \
         "$subdomain_dir/assetfinder.txt" 2>/dev/null |
         sed '/^$/d' |
         sort -u > "$output_file"
@@ -75,6 +83,8 @@ merge_subdomains() {
 
     return 0
 }
+
+
 # Resolve discovered subdomains using DNSX
 run_dnsx() {
 
@@ -93,19 +103,27 @@ run_dnsx() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
+    if [[ ! -s "$input_file" ]]; then
+        log_warn "No subdomains found. Skipping DNSX."
+        : > "$output_file"
+        return 0
+    fi
+
     if dnsx -l "$input_file" -silent -o "$output_file"; then
         local count
-
         count=$(wc -l < "$output_file")
 
         log_success "DNSX completed: $count resolved hosts"
-
         return 0
     else
         log_error "DNSX failed"
         return 1
     fi
 }
+
+
 # Probe live HTTP/HTTPS services using HTTPX
 run_httpx() {
 
@@ -124,6 +142,14 @@ run_httpx() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
+    if [[ ! -s "$input_file" ]]; then
+        log_warn "No resolved hosts found. Skipping HTTPX."
+        : > "$output_file"
+        return 0
+    fi
+
     if httpx \
         -l "$input_file" \
         -silent \
@@ -137,47 +163,14 @@ run_httpx() {
         count=$(wc -l < "$output_file")
 
         log_success "HTTPX completed: $count live HTTP services found"
-
         return 0
     else
         log_error "HTTPX failed"
         return 1
     fi
 }
-# Discover open ports using Naabu
-run_naabu() {
 
-    local input_file="$1"
-    local output_file="$2"
 
-    log_info "Running Naabu"
-
-    if ! command_exists naabu; then
-        log_error "Naabu is not installed."
-        return 1
-    fi
-
-    if [[ ! -f "$input_file" ]]; then
-        log_error "DNS input file not found: $input_file"
-        return 1
-    fi
-
-    if naabu \
-        -list "$input_file" \
-        -silent \
-        -o "$output_file"; then
-
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "Naabu completed: $count open ports found"
-
-        return 0
-    else
-        log_error "Naabu failed"
-        return 1
-    fi
-}
 # Extract clean URLs from HTTPX output
 extract_live_urls() {
 
@@ -190,6 +183,8 @@ extract_live_urls() {
         log_error "HTTPX output not found: $input_file"
         return 1
     fi
+
+    mkdir -p "$(dirname "$output_file")"
 
     sed -E 's/ \[.*$//' "$input_file" |
         sed '/^$/d' |
@@ -222,6 +217,14 @@ run_katana() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
+    if [[ ! -s "$input_file" ]]; then
+        log_warn "No live URLs found. Skipping Katana."
+        : > "$output_file"
+        return 0
+    fi
+
     if katana \
         -list "$input_file" \
         -silent \
@@ -231,13 +234,14 @@ run_katana() {
         count=$(wc -l < "$output_file")
 
         log_success "Katana completed: $count URLs discovered"
-
         return 0
     else
         log_error "Katana failed"
         return 1
     fi
 }
+
+
 # Run Nuclei vulnerability scanning
 run_nuclei() {
 
@@ -256,6 +260,14 @@ run_nuclei() {
         return 1
     fi
 
+    mkdir -p "$(dirname "$output_file")"
+
+    if [[ ! -s "$input_file" ]]; then
+        log_warn "No live URLs found. Skipping Nuclei."
+        : > "$output_file"
+        return 0
+    fi
+
     if nuclei \
         -l "$input_file" \
         -silent \
@@ -266,10 +278,52 @@ run_nuclei() {
         count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
 
         log_success "Nuclei completed: $count findings"
-
         return 0
     else
         log_error "Nuclei scan failed"
+        return 1
+    fi
+}
+
+
+# Discover open ports using Naabu
+run_naabu() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running Naabu"
+
+    if ! command_exists naabu; then
+        log_error "Naabu is not installed."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "DNS input file not found: $input_file"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$output_file")"
+
+    if [[ ! -s "$input_file" ]]; then
+        log_warn "No resolved hosts found. Skipping Naabu."
+        : > "$output_file"
+        return 0
+    fi
+
+    if naabu \
+        -list "$input_file" \
+        -silent \
+        -o "$output_file"; then
+
+        local count
+        count=$(wc -l < "$output_file")
+
+        log_success "Naabu completed: $count open ports found"
+        return 0
+    else
+        log_error "Naabu failed"
         return 1
     fi
 }
