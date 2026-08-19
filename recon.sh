@@ -25,6 +25,7 @@ source "$BASE_DIR/config.sh"
 source "$BASE_DIR/lib/logger.sh"
 source "$BASE_DIR/lib/helpers.sh"
 source "$BASE_DIR/lib/filesystem.sh"
+source "$BASE_DIR/lib/validation.sh"
 # -------------------------------
 # Banner
 # -------------------------------
@@ -109,10 +110,15 @@ done
 
 if [[ -z "$DOMAIN" ]]
 then
-print_banner
-log_error "No target domain supplied."
-usage
-exit 1
+    print_banner
+    log_error "No target domain supplied."
+    usage
+    exit 1
+fi
+
+if ! validate_domain "$DOMAIN"
+then
+    exit 1
 fi
 
 # -------------------------------
