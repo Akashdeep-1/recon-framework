@@ -106,3 +106,41 @@ run_dnsx() {
         return 1
     fi
 }
+# Probe live HTTP/HTTPS services using HTTPX
+run_httpx() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running HTTPX"
+
+    if ! command_exists httpx; then
+        log_error "HTTPX is not installed."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "DNS input file not found: $input_file"
+        return 1
+    fi
+
+    if httpx \
+        -l "$input_file" \
+        -silent \
+        -status-code \
+        -title \
+        -tech-detect \
+        -server \
+        -o "$output_file"; then
+
+        local count
+        count=$(wc -l < "$output_file")
+
+        log_success "HTTPX completed: $count live HTTP services found"
+
+        return 0
+    else
+        log_error "HTTPX failed"
+        return 1
+    fi
+}
