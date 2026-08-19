@@ -144,3 +144,37 @@ run_httpx() {
         return 1
     fi
 }
+# Discover open ports using Naabu
+run_naabu() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running Naabu"
+
+    if ! command_exists naabu; then
+        log_error "Naabu is not installed."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "DNS input file not found: $input_file"
+        return 1
+    fi
+
+    if naabu \
+        -list "$input_file" \
+        -silent \
+        -o "$output_file"; then
+
+        local count
+        count=$(wc -l < "$output_file")
+
+        log_success "Naabu completed: $count open ports found"
+
+        return 0
+    else
+        log_error "Naabu failed"
+        return 1
+    fi
+}

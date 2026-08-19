@@ -152,6 +152,9 @@ run_dnsx "${subdomain_dir}/all.txt" "$dns_output"
 local live_output="${workspace}/live/httpx.txt"
 
 run_httpx "$dns_output" "$live_output"
+local ports_output="${workspace}/ports/naabu.txt"
+
+run_naabu "$dns_output" "$ports_output"
 
 }
 main
