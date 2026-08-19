@@ -138,6 +138,9 @@ local subdomain_dir="${workspace}/subdomains"
 local subdomain_output="${subdomain_dir}/subfinder.txt"
 local assetfinder_output="${subdomain_dir}/assetfinder.txt"
 merge_subdomains "$subdomain_dir"
+local dns_output="${workspace}/dns/resolved.txt"
+
+run_dnsx "${subdomain_dir}/all.txt" "$dns_output"
 
 log_success "Framework Started"
 

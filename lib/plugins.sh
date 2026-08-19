@@ -75,3 +75,34 @@ merge_subdomains() {
 
     return 0
 }
+# Resolve discovered subdomains using DNSX
+run_dnsx() {
+
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Running DNSX"
+
+    if ! command_exists dnsx; then
+        log_error "DNSX is not installed."
+        return 1
+    fi
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "Subdomain input file not found: $input_file"
+        return 1
+    fi
+
+    if dnsx -l "$input_file" -silent -o "$output_file"; then
+        local count
+
+        count=$(wc -l < "$output_file")
+
+        log_success "DNSX completed: $count resolved hosts"
+
+        return 0
+    else
+        log_error "DNSX failed"
+        return 1
+    fi
+}
