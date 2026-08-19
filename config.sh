@@ -18,4 +18,4 @@ RESET='\033[0m'
 
 # Framework settings
 FRAMEWORK_NAME="Recon Framework"
-FRAMEWORK_VERSION="1.1.0"
+FRAMEWORK_VERSION="1.2.0"
