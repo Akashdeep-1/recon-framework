@@ -134,12 +134,16 @@ main() {
     create_workspace "$DOMAIN"
 
 local workspace="${OUTPUT_DIR}/${DOMAIN}"
-local subdomain_output="${workspace}/subdomains/subfinder.txt"
+local subdomain_dir="${workspace}/subdomains"
+local subdomain_output="${subdomain_dir}/subfinder.txt"
+local assetfinder_output="${subdomain_dir}/assetfinder.txt"
+merge_subdomains "$subdomain_dir"
 
 log_success "Framework Started"
 
 run_subfinder "$DOMAIN" "$subdomain_output"
 
+run_assetfinder "$DOMAIN" "$assetfinder_output"
 
 }
 main
