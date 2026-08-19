@@ -32,3 +32,8 @@ __pycache__/
 
 # JetBrains IDEs
 .idea/
+# Generated AI/ML datasets
+ai/dataset.csv
+
+# Generated reconnaissance output
+output/
