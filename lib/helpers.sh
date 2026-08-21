@@ -13,9 +13,16 @@ command_exists() {
 create_directory() {
     local dir="$1"
 
-    if [[ ! -d "$dir" ]]; then
-        mkdir -p "$dir"
+    if [[ -z "$dir" ]]; then
+        return 1
     fi
+
+    if [[ ! -d "$dir" ]]; then
+        mkdir -p -- "$dir"
+        return $?
+    fi
+
+    return 0
 }
 
 # Check if a file exists

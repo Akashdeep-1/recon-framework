@@ -134,13 +134,35 @@ fi
 # Main
 # -------------------------------
 
+run_required_stage() {
+
+    local stage_name="$1"
+    local stage_status
+
+    shift
+
+    "$@"
+    stage_status=$?
+
+    if [[ "$stage_status" -eq 0 ]]; then
+        return 0
+    fi
+
+    log_error "$stage_name failed. Reconnaissance aborted."
+    return "$stage_status"
+}
+
+
 main() {
 
     print_banner
 
     log_info "Target : $DOMAIN"
 
-    create_workspace "$DOMAIN"
+    if ! create_workspace "$DOMAIN"; then
+        log_error "Framework failed: unable to create workspace for $DOMAIN"
+        return 1
+    fi
 
     local workspace="${OUTPUT_DIR}/${DOMAIN}"
     local subdomain_dir="${workspace}/subdomains"
@@ -162,69 +184,95 @@ main() {
     # Subdomain Enumeration
     # -------------------------------
 
-    run_subfinder "$DOMAIN" "$subfinder_output"
+    if ! run_required_stage \
+        "Subfinder" \
+        run_subfinder "$DOMAIN" "$subfinder_output"; then
+        return 1
+    fi
 
-    run_assetfinder "$DOMAIN" "$assetfinder_output"
+    if ! run_required_stage \
+        "Assetfinder" \
+        run_assetfinder "$DOMAIN" "$assetfinder_output"; then
+        return 1
+    fi
 
-    merge_subdomains "$subdomain_dir"
+    if ! run_required_stage \
+        "Subdomain merge" \
+        merge_subdomains "$subdomain_dir" "$DOMAIN"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # DNS Resolution
     # -------------------------------
 
-    run_dnsx \
-        "${subdomain_dir}/all.txt" \
-        "$dns_output"
+    if ! run_required_stage \
+        "DNSX" \
+        run_dnsx "${subdomain_dir}/all.txt" "$dns_output"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # HTTP Probing
     # -------------------------------
 
-    run_httpx \
-        "$dns_output" \
-        "$live_output"
+    if ! run_required_stage \
+        "HTTPX" \
+        run_httpx "$dns_output" "$live_output"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # URL Extraction
     # -------------------------------
 
-    extract_live_urls \
-        "$live_output" \
-        "$clean_urls"
+    if ! run_required_stage \
+        "Live URL extraction" \
+        extract_live_urls "$live_output" "$clean_urls"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # URL Crawling
     # -------------------------------
 
-    run_katana \
-        "$clean_urls" \
-        "$katana_output"
+    if ! run_required_stage \
+        "Katana" \
+        run_katana "$clean_urls" "$katana_output"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # Vulnerability Detection
     # -------------------------------
 
-    run_nuclei \
-        "$clean_urls" \
-        "$nuclei_output"
+    if ! run_required_stage \
+        "Nuclei" \
+        run_nuclei "$katana_output" "$nuclei_output"; then
+        return 1
+    fi
 
 
     # -------------------------------
     # Port Discovery
     # -------------------------------
 
-    run_naabu \
-        "$dns_output" \
-        "$ports_output"
+    if ! run_required_stage \
+        "Naabu" \
+        run_naabu "$dns_output" "$ports_output"; then
+        return 1
+    fi
 
 
-    log_success "Reconnaissance completed for $DOMAIN"
+    log_success "Reconnaissance completed successfully for $DOMAIN"
+    return 0
 
 }
 
 main
+exit $?

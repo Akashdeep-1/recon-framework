@@ -4,6 +4,90 @@
 # Recon Framework - Plugin Library
 # ============================================
 
+# Create the parent directory for a stage output file.
+prepare_output_directory() {
+
+    local output_file="$1"
+    local output_dir
+
+    output_dir=$(dirname -- "$output_file") || {
+        log_error "Could not determine output directory for: $output_file"
+        return 1
+    }
+
+    if ! create_directory "$output_dir"; then
+        log_error "Failed to create output directory: $output_dir"
+        return 1
+    fi
+
+    return 0
+}
+
+
+# Ensure a successful stage has a readable output file, including zero results.
+ensure_result_file() {
+
+    local output_file="$1"
+
+    if [[ -e "$output_file" && ! -f "$output_file" ]]; then
+        log_error "Stage output is not a regular file: $output_file"
+        return 1
+    fi
+
+    if [[ ! -e "$output_file" ]] && ! : > "$output_file"; then
+        log_error "Failed to create stage output file: $output_file"
+        return 1
+    fi
+
+    return 0
+}
+
+
+# Count output lines and fail when a stage does not provide a readable file.
+count_result_lines() {
+
+    local output_file="$1"
+
+    if [[ ! -f "$output_file" ]]; then
+        return 1
+    fi
+
+    wc -l < "$output_file"
+}
+
+
+# Report a successful stage while preserving the distinction between data and no data.
+log_stage_result() {
+
+    local stage_name="$1"
+    local count="$2"
+    local result_label="$3"
+
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+        log_error "$stage_name produced an invalid result count."
+        return 1
+    fi
+
+    if [[ "$count" -eq 0 ]]; then
+        log_warn "$stage_name completed successfully: 0 $result_label found (EMPTY RESULT)"
+    else
+        log_success "$stage_name completed: $count $result_label found"
+    fi
+
+    return 0
+}
+
+
+# Report a non-failing stage that cannot run because upstream input is empty.
+log_stage_skipped() {
+
+    local stage_name="$1"
+    local reason="$2"
+
+    log_warn "$stage_name skipped: $reason (SKIPPED)"
+}
+
+
 # Run Subfinder for passive subdomain enumeration
 run_subfinder() {
 
@@ -17,18 +101,26 @@ run_subfinder() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
-    if subfinder -d "$domain" -silent -o "$output_file"; then
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "Subfinder completed: $count subdomains found"
-        return 0
-    else
+    if ! subfinder -d "$domain" -silent -o "$output_file"; then
         log_error "Subfinder failed for $domain"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Subfinder output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "Subfinder" "$count" "subdomains"
 }
 
 
@@ -45,18 +137,29 @@ run_assetfinder() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
-    if assetfinder --subs-only "$domain" | sort -u > "$output_file"; then
-        local count
-        count=$(wc -l < "$output_file")
+    assetfinder --subs-only "$domain" | sort -u > "$output_file"
+    local pipeline_status=("${PIPESTATUS[@]}")
 
-        log_success "Assetfinder completed: $count subdomains found"
-        return 0
-    else
+    if [[ "${pipeline_status[0]}" -ne 0 || "${pipeline_status[1]}" -ne 0 ]]; then
         log_error "Assetfinder failed for $domain"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Assetfinder output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "Assetfinder" "$count" "subdomains"
 }
 
 
@@ -64,24 +167,50 @@ run_assetfinder() {
 merge_subdomains() {
 
     local subdomain_dir="$1"
+    local domain="$2"
     local output_file="${subdomain_dir}/all.txt"
+    local subfinder_file="${subdomain_dir}/subfinder.txt"
+    local assetfinder_file="${subdomain_dir}/assetfinder.txt"
 
     log_info "Merging subdomain results"
 
-    mkdir -p "$subdomain_dir"
+    if [[ -z "$domain" ]]; then
+        log_error "Target domain is required to merge subdomains."
+        return 1
+    fi
 
-    cat \
-        "$subdomain_dir/subfinder.txt" \
-        "$subdomain_dir/assetfinder.txt" 2>/dev/null |
+    if ! create_directory "$subdomain_dir"; then
+        log_error "Failed to create subdomain directory: $subdomain_dir"
+        return 1
+    fi
+
+    if [[ ! -f "$subfinder_file" || ! -f "$assetfinder_file" ]]; then
+        log_error "Subdomain output files are missing."
+        return 1
+    fi
+
+    {
+        printf '%s\n' "$domain"
+        cat "$subfinder_file" "$assetfinder_file"
+    } |
         sed '/^$/d' |
         sort -u > "$output_file"
+    local pipeline_status=("${PIPESTATUS[@]}")
+
+    if [[ "${pipeline_status[0]}" -ne 0 ||
+          "${pipeline_status[1]}" -ne 0 ||
+          "${pipeline_status[2]}" -ne 0 ]]; then
+        log_error "Failed to merge subdomain results."
+        return 1
+    fi
 
     local count
-    count=$(wc -l < "$output_file")
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Merged subdomain output could not be read: $output_file"
+        return 1
+    fi
 
-    log_success "Unique subdomains: $count"
-
-    return 0
+    log_stage_result "Subdomain merge" "$count" "unique domains"
 }
 
 
@@ -103,24 +232,35 @@ run_dnsx() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     if [[ ! -s "$input_file" ]]; then
-        log_warn "No subdomains found. Skipping DNSX."
-        : > "$output_file"
+        log_stage_skipped "DNSX" "no subdomains found"
+        if ! : > "$output_file"; then
+            log_error "Failed to create DNSX output file: $output_file"
+            return 1
+        fi
         return 0
     fi
 
-    if dnsx -l "$input_file" -silent -o "$output_file"; then
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "DNSX completed: $count resolved hosts"
-        return 0
-    else
+    if ! dnsx -l "$input_file" -silent -o "$output_file"; then
         log_error "DNSX failed"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "DNSX output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "DNSX" "$count" "resolved hosts"
 }
 
 
@@ -142,15 +282,20 @@ run_httpx() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     if [[ ! -s "$input_file" ]]; then
-        log_warn "No resolved hosts found. Skipping HTTPX."
-        : > "$output_file"
+        log_stage_skipped "HTTPX" "no resolved hosts found"
+        if ! : > "$output_file"; then
+            log_error "Failed to create HTTPX output file: $output_file"
+            return 1
+        fi
         return 0
     fi
 
-    if httpx \
+    if ! httpx \
         -l "$input_file" \
         -silent \
         -status-code \
@@ -158,16 +303,21 @@ run_httpx() {
         -tech-detect \
         -server \
         -o "$output_file"; then
-
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "HTTPX completed: $count live HTTP services found"
-        return 0
-    else
         log_error "HTTPX failed"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "HTTPX output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "HTTPX" "$count" "live HTTP services"
 }
 
 
@@ -184,18 +334,29 @@ extract_live_urls() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     sed -E 's/ \[.*$//' "$input_file" |
         sed '/^$/d' |
         sort -u > "$output_file"
+    local pipeline_status=("${PIPESTATUS[@]}")
+
+    if [[ "${pipeline_status[0]}" -ne 0 ||
+          "${pipeline_status[1]}" -ne 0 ||
+          "${pipeline_status[2]}" -ne 0 ]]; then
+        log_error "Failed to extract live URLs."
+        return 1
+    fi
 
     local count
-    count=$(wc -l < "$output_file")
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Live URL output could not be read: $output_file"
+        return 1
+    fi
 
-    log_success "Extracted $count live URLs"
-
-    return 0
+    log_stage_result "Live URL extraction" "$count" "live URLs"
 }
 
 
@@ -217,28 +378,38 @@ run_katana() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     if [[ ! -s "$input_file" ]]; then
-        log_warn "No live URLs found. Skipping Katana."
-        : > "$output_file"
+        log_stage_skipped "Katana" "no live URLs found"
+        if ! : > "$output_file"; then
+            log_error "Failed to create Katana output file: $output_file"
+            return 1
+        fi
         return 0
     fi
 
-    if katana \
+    if ! katana \
         -list "$input_file" \
         -silent \
         -o "$output_file"; then
-
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "Katana completed: $count URLs discovered"
-        return 0
-    else
         log_error "Katana failed"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Katana output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "Katana" "$count" "URLs"
 }
 
 
@@ -260,29 +431,39 @@ run_nuclei() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     if [[ ! -s "$input_file" ]]; then
-        log_warn "No live URLs found. Skipping Nuclei."
-        : > "$output_file"
+        log_stage_skipped "Nuclei" "no live URLs found"
+        if ! : > "$output_file"; then
+            log_error "Failed to create Nuclei output file: $output_file"
+            return 1
+        fi
         return 0
     fi
 
-    if nuclei \
+    if ! nuclei \
         -l "$input_file" \
         -silent \
         -jsonl \
         -o "$output_file"; then
-
-        local count
-        count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
-
-        log_success "Nuclei completed: $count findings"
-        return 0
-    else
         log_error "Nuclei scan failed"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Nuclei output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "Nuclei" "$count" "findings"
 }
 
 
@@ -304,26 +485,36 @@ run_naabu() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$output_file")"
+    if ! prepare_output_directory "$output_file"; then
+        return 1
+    fi
 
     if [[ ! -s "$input_file" ]]; then
-        log_warn "No resolved hosts found. Skipping Naabu."
-        : > "$output_file"
+        log_stage_skipped "Naabu" "no resolved hosts found"
+        if ! : > "$output_file"; then
+            log_error "Failed to create Naabu output file: $output_file"
+            return 1
+        fi
         return 0
     fi
 
-    if naabu \
+    if ! naabu \
         -list "$input_file" \
         -silent \
         -o "$output_file"; then
-
-        local count
-        count=$(wc -l < "$output_file")
-
-        log_success "Naabu completed: $count open ports found"
-        return 0
-    else
         log_error "Naabu failed"
         return 1
     fi
+
+    if ! ensure_result_file "$output_file"; then
+        return 1
+    fi
+
+    local count
+    if ! count=$(count_result_lines "$output_file"); then
+        log_error "Naabu output could not be read: $output_file"
+        return 1
+    fi
+
+    log_stage_result "Naabu" "$count" "open ports"
 }
