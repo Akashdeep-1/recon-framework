@@ -1,0 +1,4 @@
+{"template-id":"cve-2023-1234","info":{"name":"Critical RCE","severity":"critical"},"host":"https://api.mocktarget.com","matched-at":"https://api.mocktarget.com/vuln"}
+{"template-id":"git-config-exposure","info":{"name":".git Exposed","severity":"high"},"host":"https://dev.mocktarget.com:8080","matched-at":"https://dev.mocktarget.com:8080/.git/config"}
+{"template-id":"cors-misconfig","info":{"name":"CORS Misconfiguration","severity":"medium"},"host":"https://portal.mocktarget.com:8443","matched-at":"https://portal.mocktarget.com:8443/api"}
+{"template-id":"tech-detect-nginx","info":{"name":"Nginx Detected","severity":"info"},"host":"https://api.mocktarget.com","matched-at":"https://api.mocktarget.com"}

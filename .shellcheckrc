@@ -1,0 +1,3 @@
+# ShellCheck configuration
+external-sources=true
+disable=SC1091

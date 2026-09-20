@@ -1,0 +1,8 @@
+# Sample subfinder output with in-scope, out-of-scope, duplicates, and mixed casing
+api.mocktarget.com
+dev.mocktarget.com
+api.mocktarget.com
+evil-mocktarget.com
+mocktarget.com.attacker.com
+ADMIN.MOCKTARGET.COM
+anotherdomain.com

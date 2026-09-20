@@ -1,0 +1,6 @@
+# Sample assetfinder output
+portal.mocktarget.com
+dev.mocktarget.com
+mocktarget.com
+not-mocktarget.com
+thirdparty-cdn.com

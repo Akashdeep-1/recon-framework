@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+if [[ "${MOCK_FAIL_DNSX:-0}" == "1" ]]; then
+    echo "Mock dnsx failure" >&2
+    exit 1
+fi
+inp=""
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -l) inp="$2"; shift 2 ;;
+        -o) out="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+if [[ -n "$out" ]]; then
+    if [[ -n "$inp" && -f "$inp" ]]; then
+        # Echo resolved entries for input
+        awk '{print $1 " [10.0.0.1]"}' "$inp" > "$out"
+    else
+        : > "$out"
+    fi
+fi
+exit 0

@@ -1,0 +1,6 @@
+api.mocktarget.com:443
+api.mocktarget.com:80
+dev.mocktarget.com:8080
+dev.mocktarget.com:22
+portal.mocktarget.com:8443
+evil-mocktarget.com:80

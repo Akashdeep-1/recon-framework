@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+if [[ "${MOCK_FAIL_ASSETFINDER:-0}" == "1" ]]; then
+    echo "Mock assetfinder failure" >&2
+    exit 1
+fi
+MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIXTURE="$MOCK_DIR/../fixtures/assetfinder_sample.txt"
+if [[ -f "$FIXTURE" ]]; then
+    grep -v '^#' "$FIXTURE"
+fi
+exit 0

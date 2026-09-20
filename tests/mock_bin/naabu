@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+if [[ "${MOCK_FAIL_NAABU:-0}" == "1" ]]; then
+    echo "Mock naabu failure" >&2
+    exit 1
+fi
+inp=""
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -list) inp="$2"; shift 2 ;;
+        -o) out="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIXTURE="$MOCK_DIR/../fixtures/naabu_sample.txt"
+if [[ -n "$out" && -f "$FIXTURE" ]]; then
+    if [[ -n "$inp" && ! -f "$inp" ]]; then
+        echo "Mock naabu: input file not found: $inp" >&2
+        exit 1
+    fi
+    cat "$FIXTURE" > "$out"
+fi
+exit 0
+
