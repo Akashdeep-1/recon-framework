@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HostRecord",
+  "description": "Normalized record representing an enumerated or resolved host within target scope.",
+  "type": "object",
+  "required": ["host", "target"],
+  "properties": {
+    "host": {
+      "type": "string",
+      "format": "hostname",
+      "description": "Fully qualified domain name or hostname of the discovered entity."
+    },
+    "target": {
+      "type": "string",
+      "format": "hostname",
+      "description": "Root assessment target domain that this host is in scope for."
+    },
+    "ip": {
+      "type": "string",
+      "description": "Associated IP address or comma-separated list of resolved IP addresses."
+    },
+    "source": {
+      "type": "string",
+      "description": "Discovery source or tool (e.g. subdomain, dnsx, assetfinder)."
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FindingRecord",
+  "description": "Normalized security finding record generated from vulnerability scanning engines.",
+  "type": "object",
+  "required": ["template_id", "severity", "matched_at", "target"],
+  "properties": {
+    "template_id": {
+      "type": "string",
+      "description": "Identifier of the vulnerability check or template (e.g. cve-2021-44228)."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable vulnerability or misconfiguration title."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "info", "unknown"],
+      "description": "Risk severity classification."
+    },
+    "matched_at": {
+      "type": "string",
+      "description": "URL or endpoint string where the vulnerability was identified."
+    },
+    "target": {
+      "type": "string",
+      "format": "hostname",
+      "description": "Root assessment target domain."
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "Timestamp when the finding was detected."
+    }
+  },
+  "additionalProperties": true
+}
