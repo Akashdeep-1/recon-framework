@@ -3,7 +3,7 @@
 # ============================================
 # Recon Framework - Master Controller
 # Author : Akashdeep Singh
-# Version: 1.2.0
+# Canonical version tracked in VERSION
 # ============================================
 
 set -Eeuo pipefail

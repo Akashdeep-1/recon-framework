@@ -29,7 +29,11 @@ fi
 
 # Framework settings
 FRAMEWORK_NAME="Recon Framework"
-FRAMEWORK_VERSION="1.2.0"
+if [[ -f "$BASE_DIR/VERSION" ]]; then
+    FRAMEWORK_VERSION="$(tr -d '[:space:]' < "$BASE_DIR/VERSION")"
+else
+    FRAMEWORK_VERSION="1.2.0"
+fi
 
 # Orchestration & Pipeline Control defaults
 CLI_STAGES="${CLI_STAGES:-all}"
