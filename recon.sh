@@ -75,16 +75,16 @@ run_target_pipeline() {
     local target_domain="$1"
     DOMAIN="$target_domain"
 
-    log_info "Target : $DOMAIN"
+    CURRENT_WORKSPACE="${OUTPUT_DIR}/${DOMAIN}"
+    local workspace="$CURRENT_WORKSPACE"
+    export LOG_FILE="${workspace}/logs/recon.log"
 
     if ! create_workspace "$DOMAIN"; then
         log_error "Framework failed: unable to create workspace for $DOMAIN"
         return 1
     fi
 
-    CURRENT_WORKSPACE="${OUTPUT_DIR}/${DOMAIN}"
-    local workspace="$CURRENT_WORKSPACE"
-    export LOG_FILE="${workspace}/logs/recon.log"
+    log_info "Target : $DOMAIN"
 
     # Initialize manifest tracking
     init_manifest "$workspace" "$DOMAIN" \
