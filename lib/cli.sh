@@ -36,9 +36,12 @@ usage() {
 
 Usage:
   ./recon.sh -d <domain.com> [options]
+  ./recon.sh -d <domain1,domain2,...> [options]
+  ./recon.sh -l <targets.txt> [options]
 
 Core Options:
-  -d, --domain <domain>       Target Domain (required)
+  -d, --domain <domain(s)>    Target domain(s), single or comma-separated (required unless -l)
+  -l, --list <file>           File containing target domains (one per line)
   -o, --output <directory>    Custom output workspace directory
   -r, --resume                Resume mode (skip stages with existing valid output)
   -v, --verbose               Enable verbose console debugging output
@@ -63,7 +66,8 @@ Security Notice:
 
 Examples:
   ./recon.sh -d example.com
-  ./recon.sh -d example.com -o /custom/output -t 25 --rate-limit 100
+  ./recon.sh -d example.com,target.org -t 25 --rate-limit 100
+  ./recon.sh -l targets.txt -o /custom/output
   ./recon.sh -d example.com --stages subdomains,dns,live
   ./recon.sh -d example.com --skip nuclei,ports
   ./recon.sh -d example.com -r --verbose
@@ -78,12 +82,21 @@ parse_cli_args() {
     local cli_rate=""
     local cli_to=""
     local cli_ret=""
+    local -a raw_targets=()
+    local -a target_files=()
+
+    TARGET_DOMAINS=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -d|--domain)
                 [[ $# -ge 2 ]] || { log_error "Option '$1' requires an argument."; exit 1; }
-                DOMAIN="$2"
+                raw_targets+=("$2")
+                shift 2
+                ;;
+            -l|--list)
+                [[ $# -ge 2 ]] || { log_error "Option '$1' requires an argument."; exit 1; }
+                target_files+=("$2")
                 shift 2
                 ;;
             -o|--output)
@@ -163,18 +176,66 @@ parse_cli_args() {
         STAGE_RETRIES="$cli_ret"
     fi
 
-    # Validate target domain
-    if [[ -z "${DOMAIN:-}" ]]; then
+    # Ingest target list files
+    local f
+    for f in "${target_files[@]}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Target list file not found: $f"
+            exit 1
+        fi
+        if [[ ! -r "$f" ]]; then
+            log_error "Target list file is not readable: $f"
+            exit 1
+        fi
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            local trimmed="${line#"${line%%[![:space:]]*}"}"
+            trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+            if [[ -n "$trimmed" && "$trimmed" != \#* ]]; then
+                raw_targets+=("$trimmed")
+            fi
+        done < "$f"
+    done
+
+    # Validate that at least one target domain was supplied
+    if (( ${#raw_targets[@]} == 0 )); then
         print_banner
         log_error "No target domain supplied."
         usage
         exit 1
     fi
 
-    DOMAIN="$(normalize_domain "$DOMAIN")"
-    if ! validate_domain "$DOMAIN"; then
+    # Normalize, validate, and deduplicate targets
+    declare -A seen_targets=()
+    local raw_entry
+    for raw_entry in "${raw_targets[@]}"; do
+        local IFS=','
+        local -a split_entries
+        read -r -a split_entries <<< "$raw_entry"
+        local item
+        for item in "${split_entries[@]}"; do
+            local norm
+            norm="$(normalize_domain "$item")"
+            if [[ -z "$norm" ]]; then
+                continue
+            fi
+            if ! validate_domain "$norm"; then
+                exit 1
+            fi
+            if [[ -z "${seen_targets[$norm]:-}" ]]; then
+                seen_targets["$norm"]=1
+                TARGET_DOMAINS+=("$norm")
+            fi
+        done
+    done
+
+    if (( ${#TARGET_DOMAINS[@]} == 0 )); then
+        log_error "No valid target domain supplied."
         exit 1
     fi
+
+    # Backward compatibility for single target variable
+    DOMAIN="${TARGET_DOMAINS[0]}"
+    export DOMAIN TARGET_DOMAINS
 
     return 0
 }

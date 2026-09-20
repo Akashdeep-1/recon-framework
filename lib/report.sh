@@ -168,3 +168,66 @@ generate_reports() {
     generate_markdown_report "$workspace" "$domain" "$md_file"
     generate_html_report "$workspace" "$domain" "$html_file"
 }
+
+# Generate an aggregated multi-target summary report
+generate_multi_target_summary() {
+    local output_base_dir="$1"
+    shift
+    local targets=("$@")
+
+    local reports_dir="${output_base_dir}/reports"
+    mkdir -p "$reports_dir"
+    local summary_md="${reports_dir}/multi_target_summary.md"
+
+    local scan_date
+    scan_date="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
+
+    {
+        cat << EOF
+# Multi-Target Reconnaissance Assessment Report
+
+**Generated:** \`${scan_date}\`<br>
+**Total Targets:** \`${#targets[@]}\`<br>
+**Tool:** Recon Framework v${FRAMEWORK_VERSION:-1.2.0}
+
+---
+
+## Target Summary Matrix
+
+| Target Domain | Status | Subdomains | Resolved Hosts | Open Ports | Live URLs | Findings |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+EOF
+
+        for target in "${targets[@]}"; do
+            local ws="${output_base_dir}/${target}"
+            local st="Unknown"
+            if [[ -f "${ws}/manifest.json" ]]; then
+                if grep -q '"status":[[:space:]]*"success"' "${ws}/manifest.json"; then
+                    st="Success"
+                elif grep -q '"status":[[:space:]]*"failed"' "${ws}/manifest.json"; then
+                    st="Failed"
+                fi
+            fi
+
+            local sub_c res_c port_c live_c find_c
+            sub_c="$(_safe_line_count "${ws}/subdomains/all.txt")"
+            res_c="$(_safe_line_count "${ws}/dns/resolved.txt")"
+            port_c="$(_safe_line_count "${ws}/ports/naabu.txt")"
+            live_c="$(_safe_line_count "${ws}/live/urls.txt")"
+            find_c="$(_safe_line_count "${ws}/nuclei/findings.jsonl")"
+
+            # shellcheck disable=SC2016
+            printf '| **%s** | `%s` | %s | %s | %s | %s | %s |\n' \
+                "$target" "$st" "$sub_c" "$res_c" "$port_c" "$live_c" "$find_c"
+        done
+
+        cat << EOF
+
+---
+*Notice: This report was generated for authorized security assessment purposes only.*
+EOF
+    } > "$summary_md"
+
+    log_success "Multi-target summary report generated: $summary_md"
+    return 0
+}

@@ -68,14 +68,13 @@ trap cleanup EXIT
 trap 'log_error "Reconnaissance interrupted by user signal."; exit 130' INT TERM
 
 # -------------------------------
-# Main Orchestrator
+# Target Pipeline Execution
 # -------------------------------
 
-main() {
-    # Parse CLI flags, options, and target domain
-    parse_cli_args "$@"
+run_target_pipeline() {
+    local target_domain="$1"
+    DOMAIN="$target_domain"
 
-    print_banner
     log_info "Target : $DOMAIN"
 
     if ! create_workspace "$DOMAIN"; then
@@ -237,6 +236,54 @@ main() {
     finalize_manifest "$workspace" "success"
 
     log_success "Reconnaissance completed successfully for $DOMAIN"
+    return 0
+}
+
+# -------------------------------
+# Main Orchestrator
+# -------------------------------
+
+main() {
+    # Parse CLI flags, options, and target domain(s)
+    parse_cli_args "$@"
+
+    print_banner
+
+    local total_targets=${#TARGET_DOMAINS[@]}
+    local target_failures=0
+    local target_idx=0
+
+    if (( total_targets > 1 )); then
+        log_info "Initiating reconnaissance across $total_targets target(s): ${TARGET_DOMAINS[*]}"
+    fi
+
+    for target in "${TARGET_DOMAINS[@]}"; do
+        target_idx=$(( target_idx + 1 ))
+        if (( total_targets > 1 )); then
+            echo ""
+            log_info "=========================================================="
+            log_info "Target [${target_idx}/${total_targets}]: ${target}"
+            log_info "=========================================================="
+        fi
+
+        if ! run_target_pipeline "$target"; then
+            target_failures=$(( target_failures + 1 ))
+            log_error "Pipeline failed for target: $target"
+        fi
+    done
+
+    if (( total_targets > 1 )); then
+        generate_multi_target_summary "${OUTPUT_DIR}" "${TARGET_DOMAINS[@]}"
+    fi
+
+    if (( target_failures > 0 )); then
+        log_error "Reconnaissance completed with $target_failures failure(s) across $total_targets target(s)."
+        return 1
+    fi
+
+    if (( total_targets > 1 )); then
+        log_success "All $total_targets target assessments completed successfully."
+    fi
     return 0
 }
 
