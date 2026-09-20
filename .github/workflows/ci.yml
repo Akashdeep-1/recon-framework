@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint, Syntax & Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+
+      - name: Verify Git formatting & whitespace
+        run: |
+          git diff --check
+
+      - name: Validate Bash syntax (bash -n)
+        run: |
+          bash -n recon.sh config.sh install.sh lib/*.sh tests/**/*.sh tests/*.sh
+
+      - name: Run ShellCheck
+        run: |
+          shellcheck recon.sh config.sh install.sh lib/*.sh tests/**/*.sh tests/*.sh
+
+      - name: Run Automated Test Suite
+        run: |
+          make test
