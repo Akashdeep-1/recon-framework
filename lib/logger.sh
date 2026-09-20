@@ -53,8 +53,15 @@ log_error() {
     _log_message "ERROR" "${RED}" "${message}"
 }
 
-# Print a debug message.
+# Print a debug message (always logged to file if set, printed to console only if VERBOSE=1).
 log_debug() {
     local message="$1"
-    _log_message "DEBUG" "${CYAN}" "${message}"
+    if [[ "${VERBOSE:-0}" == "1" ]]; then
+        _log_message "DEBUG" "${CYAN}" "${message}"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        local ts clean_msg
+        ts="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
+        clean_msg="$(printf '%b' "$message" | sed -E 's/\x1B\[[0-9;]*[mK]//g')"
+        printf '[%s] [%-7s] %s\n' "$ts" "DEBUG" "$clean_msg" >> "$LOG_FILE" 2>/dev/null || true
+    fi
 }

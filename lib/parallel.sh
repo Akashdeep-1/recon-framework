@@ -89,3 +89,68 @@ run_parallel_stages() {
     log_success "Parallel stages completed successfully: [$name1] & [$name2]"
     return 0
 }
+
+# Last timeout watcher PID for verification
+# shellcheck disable=SC2034
+export LAST_TIMEOUT_WATCHER_PID=""
+
+# Run a command or function with a strict timeout in seconds.
+# Usage: run_with_timeout <seconds> command [args...]
+run_with_timeout() {
+    local timeout_sec="$1"
+    shift
+    if [[ -z "$timeout_sec" || "$timeout_sec" -le 0 ]]; then
+        "$@"
+        return $?
+    fi
+
+    local timeout_flag
+    timeout_flag="$(mktemp "${TMPDIR:-/tmp}/recon_timeout_flag.XXXXXX" 2>/dev/null || printf '/tmp/to_flag_%s' "$$")"
+    rm -f "$timeout_flag"
+
+    local old_opts="$-"
+    set -m
+    ( "$@" ) &
+    local cmd_pid=$!
+    if [[ "$old_opts" != *m* ]]; then
+        set +m
+    fi
+
+    (
+        sleep "$timeout_sec"
+        if kill -0 "$cmd_pid" 2>/dev/null; then
+            touch "$timeout_flag" 2>/dev/null || true
+            kill -TERM -- "-$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true
+            sleep 0.5 2>/dev/null || true
+            if kill -0 "$cmd_pid" 2>/dev/null; then
+                kill -KILL -- "-$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true
+            fi
+        fi
+    ) &
+    local watcher_pid=$!
+    LAST_TIMEOUT_WATCHER_PID="$watcher_pid"
+
+    ACTIVE_CHILD_PIDS+=("$cmd_pid" "$watcher_pid")
+
+    local ret=0
+    wait "$cmd_pid" 2>/dev/null || ret=$?
+
+    kill -TERM "$watcher_pid" 2>/dev/null || true
+    wait "$watcher_pid" 2>/dev/null || true
+
+    if [[ -f "$timeout_flag" ]]; then
+        rm -f "$timeout_flag" 2>/dev/null || true
+        ret=124
+    fi
+
+    local new_pids=()
+    local p
+    for p in "${ACTIVE_CHILD_PIDS[@]}"; do
+        if [[ "$p" != "$cmd_pid" && "$p" != "$watcher_pid" ]]; then
+            new_pids+=("$p")
+        fi
+    done
+    ACTIVE_CHILD_PIDS=("${new_pids[@]}")
+
+    return "$ret"
+}

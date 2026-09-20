@@ -99,6 +99,12 @@ assert_true "recon.sh: generates Markdown report" \
 assert_true "recon.sh: generates HTML report" \
     test -s "$WORKSPACE/reports/summary.html"
 
+assert_true "recon.sh: generates run manifest" \
+    test -s "$WORKSPACE/manifest.json"
+
+assert_true "recon.sh: manifest records overall success" \
+    grep -q "\"status\": \"success\"" "$WORKSPACE/manifest.json"
+
 # Cleanup
 rm -rf "$OUTPUT_DIR"
 
