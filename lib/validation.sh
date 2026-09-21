@@ -115,8 +115,8 @@ is_in_scope() {
         return 1
     fi
 
-    # Reject if candidate contains URL parts or ports
-    if [[ "$candidate" == *:* || "$candidate" == */* || "$candidate" == *" "* ]]; then
+    # Reject if candidate contains URL parts, ports, credentials, or spaces
+    if [[ "$candidate" == *:* || "$candidate" == */* || "$candidate" == *" "* || "$candidate" == *@* ]]; then
         return 1
     fi
 
@@ -151,6 +151,9 @@ is_url_in_scope() {
     host_part="${host_part%%/*}"
     host_part="${host_part%%\?*}"
     host_part="${host_part%%\#*}"
+
+    # Strip userinfo if present (e.g., user:pass@host)
+    host_part="${host_part##*@}"
 
     # Strip port if present
     host_part="${host_part%%:*}"

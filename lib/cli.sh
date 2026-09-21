@@ -154,25 +154,41 @@ parse_cli_args() {
         esac
     done
 
-    # Apply CLI Overrides
+    # Apply CLI Overrides with validation
     if [[ -n "$custom_out" ]]; then
         OUTPUT_DIR="$custom_out"
     fi
     if [[ -n "$cli_threads" ]]; then
+        if [[ ! "$cli_threads" =~ ^[0-9]+$ ]] || (( cli_threads <= 0 )); then
+            log_error "Invalid threads value: '$cli_threads' (must be a positive integer)."
+            exit 1
+        fi
         DNSX_THREADS="$cli_threads"
         HTTPX_THREADS="$cli_threads"
         KATANA_CONCURRENCY="$cli_threads"
         NUCLEI_CONCURRENCY="$cli_threads"
     fi
     if [[ -n "$cli_rate" ]]; then
+        if [[ ! "$cli_rate" =~ ^[0-9]+$ ]] || (( cli_rate <= 0 )); then
+            log_error "Invalid rate-limit value: '$cli_rate' (must be a positive integer)."
+            exit 1
+        fi
         HTTPX_RATE_LIMIT="$cli_rate"
         NAABU_RATE="$cli_rate"
         NUCLEI_RATE_LIMIT="$cli_rate"
     fi
     if [[ -n "$cli_to" ]]; then
+        if [[ ! "$cli_to" =~ ^[0-9]+$ ]] || (( cli_to < 0 )); then
+            log_error "Invalid timeout value: '$cli_to' (must be a non-negative integer)."
+            exit 1
+        fi
         STAGE_TIMEOUT="$cli_to"
     fi
     if [[ -n "$cli_ret" ]]; then
+        if [[ ! "$cli_ret" =~ ^[0-9]+$ ]] || (( cli_ret < 0 )); then
+            log_error "Invalid retries value: '$cli_ret' (must be a non-negative integer)."
+            exit 1
+        fi
         STAGE_RETRIES="$cli_ret"
     fi
 
