@@ -13,21 +13,22 @@ fi
 # Track active background child PIDs for cleanup
 declare -a ACTIVE_CHILD_PIDS=()
 
-# Cleanup handler for active child processes on abort
+# Cleanup handler for active child processes and process trees on abort
 cleanup_parallel_tasks() {
     if (( ${#ACTIVE_CHILD_PIDS[@]} > 0 )); then
         log_warn "Terminating background parallel tasks: ${ACTIVE_CHILD_PIDS[*]}"
         local pid
         for pid in "${ACTIVE_CHILD_PIDS[@]}"; do
             if kill -0 "$pid" 2>/dev/null; then
-                kill -TERM "$pid" 2>/dev/null || true
+                # Attempt process-group termination first, then individual PID
+                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
                 local waited=0
                 while kill -0 "$pid" 2>/dev/null && (( waited < 10 )); do
                     sleep 0.05 2>/dev/null || true
                     waited=$(( waited + 1 ))
                 done
                 if kill -0 "$pid" 2>/dev/null; then
-                    kill -9 "$pid" 2>/dev/null || true
+                    kill -KILL -- "-$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
                 fi
                 wait "$pid" 2>/dev/null || true
             fi
@@ -116,8 +117,18 @@ run_with_timeout() {
         set +m
     fi
 
+    # Watcher subshell: traps TERM/EXIT to kill child sleep process and avoid orphan processes
     (
-        sleep "$timeout_sec"
+        sleep "$timeout_sec" &
+        local sleep_pid=$!
+        # shellcheck disable=SC2317,SC2329
+        on_watcher_exit() {
+            kill -TERM "$sleep_pid" 2>/dev/null || true
+            exit 0
+        }
+        trap on_watcher_exit TERM INT EXIT
+        wait "$sleep_pid" 2>/dev/null || true
+
         if kill -0 "$cmd_pid" 2>/dev/null; then
             touch "$timeout_flag" 2>/dev/null || true
             kill -TERM -- "-$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true
@@ -135,11 +146,17 @@ run_with_timeout() {
     local ret=0
     wait "$cmd_pid" 2>/dev/null || ret=$?
 
+    # Terminate watcher and child sleep process immediately
     kill -TERM "$watcher_pid" 2>/dev/null || true
     wait "$watcher_pid" 2>/dev/null || true
 
+    local timed_out=0
     if [[ -f "$timeout_flag" ]]; then
-        rm -f "$timeout_flag" 2>/dev/null || true
+        timed_out=1
+    fi
+    rm -f "$timeout_flag" 2>/dev/null || true
+
+    if (( timed_out == 1 )); then
         ret=124
     fi
 
