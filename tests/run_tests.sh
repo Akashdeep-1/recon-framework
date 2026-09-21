@@ -9,6 +9,9 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$TEST_DIR/.."
 
+# Ensure mock binaries are executable across all environments
+chmod +x "$ROOT_DIR"/tests/mock_bin/* 2>/dev/null || true
+
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
