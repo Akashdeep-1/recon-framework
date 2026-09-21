@@ -6,6 +6,19 @@ This project follows semantic versioning.
 
 ---
 
+## [1.3.0] - 2026-09-21
+
+### Production Hardening, Reliability & Containerization (Phase 4)
+- **Manifest JSON Hardening & Atomic Integrity:** Multi-engine JSON processing supporting `jq` with deterministic Python standard-library fallback. Atomic temporary-file swapping prevents partial, truncated, or corrupt manifest writes. Added `get_manifest_stage_status` and `get_manifest_overall_status` inspection helpers.
+- **Docker Multi-Stage Containerization:** Added production multi-stage `Dockerfile` compiling pinned Go tools (`subfinder` v2.6.8, `assetfinder` v0.1.1, `dnsx` v1.2.1, `naabu` v2.3.1, `httpx` v1.6.8, `katana` v1.1.0, `nuclei` v3.3.2) on Alpine Linux 3.20. Configured rootless service execution (`UID 10001:GID 10001`), Linux network packet capture capabilities, `.dockerignore`, and `docker-compose.yml`.
+- **CI Container Testing:** Integrated automated Docker image build, help display, non-root user verification, and PATH tool discovery into `.github/workflows/ci.yml`.
+- **Process & Resource Hardening:** Eliminated orphan `sleep` processes from timeout watcher subshells using signal trapping on watcher completion. Hardened process-group signalling across Unix environments.
+- **Pipeline Reliability & Crash Recovery:** Interrupted or failed stages are verified via previous manifest state and re-executed upon resumption (`-r`) rather than prematurely skipped. Structural artifact validation ensures corrupted or 0-byte files trigger fresh stage runs.
+- **Security & Scope Hardening:** Enhanced scope enforcement and URL authority parsing to neutralize userinfo credential confusion tricks (`http://target@attacker.com`). Strict positive integer boundary validation for CLI concurrency, timeout, rate-limit, and retries.
+- **Test Harness Expansion:** Added dedicated manifest hardening unit tests (`tests/unit/test_manifest_hardening.sh`), crash recovery integration tests (`tests/integration/test_crash_recovery.sh`), and security boundary integration tests (`tests/integration/test_security_boundaries.sh`), expanding test suite to 19 suites (270+ assertions).
+
+---
+
 ## [1.2.0] - 2026-09-20
 
 ### Engineering Maturity & Multi-Target (Phase 3)

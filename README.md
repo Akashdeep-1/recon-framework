@@ -42,7 +42,7 @@ Assetfinder ┘                             │            │
 
 ---
 
-## Quick Start
+# Quick Start
 
 ### 1. Verify Dependencies
 Check required tools (`subfinder`, `assetfinder`, `dnsx`, `naabu`, `httpx`, `katana`, `nuclei`):
@@ -85,6 +85,41 @@ To view Go installation commands for any missing tools:
 # Skip port scanning and vulnerability scanning
 ./recon.sh -d example.com --skip ports,nuclei
 ```
+
+---
+
+## Docker Containerization
+
+The framework provides a production-grade multi-stage Docker build producing a minimal, non-root, reproducible container (`alpine:3.20`) with all reconnaissance tools compiled from pinned versions.
+
+### Build the Image
+```bash
+docker build -t recon-framework:latest .
+```
+
+### Run Reconnaissance via Docker
+```bash
+# Mount host output directory for persistence
+docker run --rm -v $(pwd)/output:/app/output recon-framework:latest -d example.com
+
+# Multi-target reconnaissance with custom concurrency
+docker run --rm -v $(pwd)/output:/app/output recon-framework:latest -d example.com,target.org -t 25
+
+# Target list file execution
+docker run --rm -v $(pwd)/output:/app/output -v $(pwd)/targets.txt:/app/targets.txt:ro \
+  recon-framework:latest -l /app/targets.txt
+```
+
+### Run via Docker Compose
+```bash
+# Start container assessment using docker-compose
+docker compose run --rm recon -d example.com
+```
+
+### Container Security & Architecture
+- **Non-Root Execution:** Runs under dedicated unprivileged service account `recon` (`UID 10001:GID 10001`).
+- **Minimal Attack Surface:** Multi-stage build discards Go compilers, retaining only runtime binaries and libraries.
+- **Rootless Network Capabilities:** Linux capabilities (`cap_net_raw,cap_net_bind_service`) applied to Naabu binary for raw packet capture without requiring root privileges.
 
 ---
 
@@ -195,6 +230,25 @@ git diff --check
 ## Release Procedure
 
 The framework uses semantic versioning with a single canonical source of truth in `VERSION`. For the step-by-step release checklist, see [Release Procedure](docs/release-procedure.md).
+
+---
+
+## Supported Platforms
+
+The framework is architected for cross-platform portability across modern POSIX environments:
+
+- **Docker:** Fully supported via official multi-stage container (recommended for production).
+- **Linux:** Native support on Ubuntu, Debian, Kali Linux, Arch, Fedora.
+- **macOS:** Supported with GNU coreutils and bash (`brew install bash coreutils jq`).
+- **Windows:** Supported via Git Bash and WSL2 (Windows Subsystem for Linux).
+
+---
+
+## Limitations & Operational Boundaries
+
+- **Zero-Network Testing:** The integrated test harness uses deterministic mock binaries and performs no live network activity.
+- **Scope Authority:** The framework automatically filters third-party CDN domains and sibling domains; wildcards (`*.example.com`) are expanded only via active/passive discoveries.
+- **Active Scans:** Vulnerability scanning (`nuclei`) and crawling (`katana`) require explicit authorization from the target domain owner.
 
 ---
 

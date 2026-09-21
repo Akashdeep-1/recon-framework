@@ -24,7 +24,7 @@ FROM alpine:3.20
 
 LABEL maintainer="Akashdeep Singh" \
       description="Production-hardened Recon Framework reconnaissance engine" \
-      version="1.2.0"
+      version="1.3.0"
 
 # Install core runtime dependencies (zero unnecessary packages)
 RUN apk add --no-cache \
