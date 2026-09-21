@@ -1,0 +1,8 @@
+.git
+.github
+tests
+logs
+output
+*.md
+.shellcheckrc
+.gitignore

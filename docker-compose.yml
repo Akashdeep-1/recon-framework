@@ -1,0 +1,17 @@
+services:
+  recon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: recon-framework:latest
+    container_name: recon-framework
+    volumes:
+      - ./output:/app/output
+    environment:
+      - OUTPUT_DIR=/app/output
+      - THREADS=${THREADS:-50}
+      - RATE_LIMIT=${RATE_LIMIT:-150}
+      - STAGE_TIMEOUT=${STAGE_TIMEOUT:-300}
+      - STAGE_RETRIES=${STAGE_RETRIES:-1}
+    user: "10001:10001"
+    restart: "no"

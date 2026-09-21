@@ -17,10 +17,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install ShellCheck
+      - name: Install ShellCheck & jq
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq shellcheck
+          sudo apt-get install -y -qq shellcheck jq
 
       - name: Verify Git formatting & whitespace
         run: |
@@ -37,3 +37,20 @@ jobs:
       - name: Run Automated Test Suite
         run: |
           make test
+
+      - name: Build Docker Container
+        run: |
+          docker build -t recon-framework:test .
+
+      - name: Verify Docker Container Execution
+        run: |
+          # 1. Verify container starts and displays help
+          docker run --rm recon-framework:test --help
+          # 2. Verify non-root user (UID 10001)
+          USER_ID=$(docker run --rm --entrypoint id recon-framework:test -u)
+          if [ "$USER_ID" != "10001" ]; then
+            echo "Security violation: Expected non-root UID 10001, got $USER_ID" >&2
+            exit 1
+          fi
+          # 3. Verify tool discovery in container PATH
+          docker run --rm --entrypoint bash recon-framework:test -c "which subfinder assetfinder dnsx naabu httpx katana nuclei jq"
