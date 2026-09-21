@@ -123,9 +123,20 @@ is_stage_output_valid() {
     local check_file="$2"
     local workspace="$3"
 
+    # 1. Manifest status check: if manifest exists, stage must have succeeded
+    if [[ -f "${workspace}/manifest.json" ]]; then
+        local prev_status
+        prev_status="$(get_manifest_stage_status "$workspace" "$stage_key")"
+        if [[ "$prev_status" != "success" && "$prev_status" != "resumed" ]]; then
+            log_debug "Stage '$stage_key' not resumed: previous manifest status is '$prev_status' (must be 'success')."
+            return 1
+        fi
+    fi
+
+    # 2. Structural artifact validation
     case "$stage_key" in
         subdomains)
-            [[ -f "$check_file" && -s "$check_file" ]]
+            [[ -f "$check_file" && -s "$check_file" && -f "${workspace}/subdomains/hosts.jsonl" ]]
             ;;
         dns)
             [[ -f "$check_file" && -s "$check_file" ]]
@@ -143,7 +154,7 @@ is_stage_output_valid() {
             [[ -f "$check_file" && -s "${workspace}/nuclei/summary.json" ]]
             ;;
         reports)
-            [[ -f "$check_file" && -s "$check_file" ]]
+            [[ -f "$check_file" && -s "$check_file" && -f "${workspace}/reports/summary.html" ]]
             ;;
         *)
             [[ -f "$check_file" && -s "$check_file" ]]

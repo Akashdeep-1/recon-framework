@@ -41,6 +41,7 @@ SUITES=(
     "tests/integration/test_pipeline_e2e.sh"
     "tests/integration/test_pipeline_failure.sh"
     "tests/integration/test_pipeline_resumption.sh"
+    "tests/integration/test_crash_recovery.sh"
 )
 
 TOTAL_SUITES=${#SUITES[@]}
