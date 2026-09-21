@@ -52,7 +52,7 @@ source "$BASE_DIR/lib/cli.sh"
 
 CURRENT_WORKSPACE=""
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local exit_code=$?
     cleanup_parallel_tasks 2>/dev/null || true
@@ -126,23 +126,8 @@ run_target_pipeline() {
     # -------------------------------
     print_stage_step 1 "$total_stages" "Subdomains (Passive Enumeration & Merge)"
 
-    # shellcheck disable=SC2329
-    run_subdomains_stage() {
-        if [[ "${PARALLEL_PASSIVE:-true}" == "true" ]]; then
-            export -f _log_message run_subfinder run_assetfinder prepare_output_directory ensure_result_file count_result_lines log_stage_result log_info log_success log_warn log_error log_debug command_exists create_directory
-            export FRAMEWORK_NAME FRAMEWORK_VERSION RED GREEN YELLOW BLUE CYAN RESET OUTPUT_DIR LOG_FILE VERBOSE
-
-            run_parallel_stages \
-                "Subfinder" \
-                "run_subfinder '$DOMAIN' '$subfinder_output'" \
-                "Assetfinder" \
-                "run_assetfinder '$DOMAIN' '$assetfinder_output'"
-        else
-            run_subfinder "$DOMAIN" "$subfinder_output" && run_assetfinder "$DOMAIN" "$assetfinder_output"
-        fi && merge_subdomains "$subdomain_dir" "$DOMAIN"
-    }
-
-    if ! run_pipeline_stage "subdomains" "Subdomain Discovery" "$merged_subdomains" run_subdomains_stage; then
+    if ! run_pipeline_stage "subdomains" "Subdomain Discovery" "$merged_subdomains" \
+        execute_subdomains_stage "$DOMAIN" "$subdomain_dir" "$subfinder_output" "$assetfinder_output"; then
         return 1
     fi
 
@@ -171,22 +156,8 @@ run_target_pipeline() {
     # -------------------------------
     print_stage_step 4 "$total_stages" "HTTP Probing (HTTPX)"
 
-    # shellcheck disable=SC2329
-    run_live_stage() {
-        {
-            if [[ -s "$dns_output" ]]; then
-                awk '{print $1}' "$dns_output"
-            fi
-            if [[ -s "$web_candidates" ]]; then
-                cat "$web_candidates"
-            fi
-        } | sed '/^$/d' | sort -u > "$http_targets"
-
-        run_httpx "$DOMAIN" "$http_targets" "$live_output" && \
-        extract_live_urls "$DOMAIN" "$live_output" "$clean_urls"
-    }
-
-    if ! run_pipeline_stage "live" "HTTP Probing" "$clean_urls" run_live_stage; then
+    if ! run_pipeline_stage "live" "HTTP Probing" "$clean_urls" \
+        execute_live_stage "$DOMAIN" "$dns_output" "$web_candidates" "$http_targets" "$live_output" "$clean_urls"; then
         return 1
     fi
 
@@ -205,16 +176,8 @@ run_target_pipeline() {
     # -------------------------------
     print_stage_step 6 "$total_stages" "Vulnerability Detection (Nuclei)"
 
-    # shellcheck disable=SC2329
-    run_vuln_stage() {
-        local vuln_input="$katana_output"
-        if [[ ! -s "$vuln_input" && -s "$clean_urls" ]]; then
-            vuln_input="$clean_urls"
-        fi
-        run_nuclei "$DOMAIN" "$vuln_input" "$nuclei_output"
-    }
-
-    if ! run_pipeline_stage "vuln" "Vulnerability Scanning" "$nuclei_output" run_vuln_stage; then
+    if ! run_pipeline_stage "vuln" "Vulnerability Scanning" "$nuclei_output" \
+        execute_vuln_stage "$DOMAIN" "$katana_output" "$clean_urls" "$nuclei_output"; then
         return 1
     fi
 
@@ -223,12 +186,8 @@ run_target_pipeline() {
     # -------------------------------
     print_stage_step 7 "$total_stages" "Report Generation"
 
-    # shellcheck disable=SC2329
-    run_reports_stage() {
-        generate_reports "$workspace" "$DOMAIN"
-    }
-
-    if ! run_pipeline_stage "reports" "Report Generation" "${workspace}/reports/summary.md" run_reports_stage; then
+    if ! run_pipeline_stage "reports" "Report Generation" "${workspace}/reports/summary.md" \
+        execute_reports_stage "$workspace" "$DOMAIN"; then
         return 1
     fi
 

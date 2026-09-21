@@ -17,18 +17,6 @@ RESET='\033[0m'
 PASSED=0
 FAILED=0
 
-# shellcheck disable=SC2329
-assert_true() {
-    local desc="$1"
-    shift
-    if "$@"; then
-        echo -e "  ${GREEN}✓${RESET} $desc"
-        PASSED=$(( PASSED + 1 ))
-    else
-        echo -e "  ${RED}✗${RESET} $desc"
-        FAILED=$(( FAILED + 1 ))
-    fi
-}
 
 assert_equals() {
     local desc="$1"

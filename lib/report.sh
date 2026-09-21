@@ -42,7 +42,7 @@ generate_markdown_report() {
 
 **Target Domain:** \`${domain}\`<br>
 **Generated:** \`${scan_date}\`<br>
-**Tool:** Recon Framework v${FRAMEWORK_VERSION:-1.2.0}
+**Tool:** Recon Framework v${FRAMEWORK_VERSION}
 
 ---
 
@@ -188,7 +188,7 @@ generate_multi_target_summary() {
 
 **Generated:** \`${scan_date}\`<br>
 **Total Targets:** \`${#targets[@]}\`<br>
-**Tool:** Recon Framework v${FRAMEWORK_VERSION:-1.2.0}
+**Tool:** Recon Framework v${FRAMEWORK_VERSION}
 
 ---
 

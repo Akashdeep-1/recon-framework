@@ -220,3 +220,68 @@ run_pipeline_stage() {
     log_error "$stage_label failed after $max_attempts attempt(s) with status $stage_status. Reconnaissance aborted."
     return "$stage_status"
 }
+
+# Execute subdomains stage (passive enumeration & merge)
+execute_subdomains_stage() {
+    local domain="$1"
+    local subdomain_dir="$2"
+    local subfinder_output="$3"
+    local assetfinder_output="$4"
+
+    if [[ "${PARALLEL_PASSIVE:-true}" == "true" ]]; then
+        export -f _log_message run_subfinder run_assetfinder prepare_output_directory ensure_result_file count_result_lines log_stage_result log_info log_success log_warn log_error log_debug command_exists create_directory
+        export FRAMEWORK_NAME FRAMEWORK_VERSION RED GREEN YELLOW BLUE CYAN RESET OUTPUT_DIR LOG_FILE VERBOSE
+
+        run_parallel_stages \
+            "Subfinder" \
+            "run_subfinder '$domain' '$subfinder_output'" \
+            "Assetfinder" \
+            "run_assetfinder '$domain' '$assetfinder_output'"
+    else
+        run_subfinder "$domain" "$subfinder_output" && run_assetfinder "$domain" "$assetfinder_output"
+    fi && merge_subdomains "$subdomain_dir" "$domain"
+}
+
+# Execute live HTTP stage (aggregate DNS and Naabu web ports, probe with HTTPX)
+execute_live_stage() {
+    local domain="$1"
+    local dns_output="$2"
+    local web_candidates="$3"
+    local http_targets="$4"
+    local live_output="$5"
+    local clean_urls="$6"
+
+    {
+        if [[ -s "$dns_output" ]]; then
+            awk '{print $1}' "$dns_output"
+        fi
+        if [[ -s "$web_candidates" ]]; then
+            cat "$web_candidates"
+        fi
+    } | sed '/^$/d' | sort -u > "$http_targets"
+
+    run_httpx "$domain" "$http_targets" "$live_output" && \
+    extract_live_urls "$domain" "$live_output" "$clean_urls"
+}
+
+# Execute vulnerability scanning stage (Nuclei on crawled or live URLs)
+execute_vuln_stage() {
+    local domain="$1"
+    local katana_output="$2"
+    local clean_urls="$3"
+    local nuclei_output="$4"
+
+    local vuln_input="$katana_output"
+    if [[ ! -s "$vuln_input" && -s "$clean_urls" ]]; then
+        vuln_input="$clean_urls"
+    fi
+    run_nuclei "$domain" "$vuln_input" "$nuclei_output"
+}
+
+# Execute reports generation stage
+execute_reports_stage() {
+    local workspace="$1"
+    local domain="$2"
+
+    generate_reports "$workspace" "$domain"
+}

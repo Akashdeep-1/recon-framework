@@ -32,7 +32,8 @@ FRAMEWORK_NAME="Recon Framework"
 if [[ -f "$BASE_DIR/VERSION" ]]; then
     FRAMEWORK_VERSION="$(tr -d '[:space:]' < "$BASE_DIR/VERSION")"
 else
-    FRAMEWORK_VERSION="1.2.0"
+    echo "Error: Canonical VERSION file not found at $BASE_DIR/VERSION" >&2
+    exit 1
 fi
 
 # Orchestration & Pipeline Control defaults

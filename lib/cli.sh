@@ -25,7 +25,7 @@ print_banner() {
 ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
 ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
 
-        ${FRAMEWORK_NAME:-Recon Framework} v${FRAMEWORK_VERSION:-1.2.0}
+        ${FRAMEWORK_NAME:-Recon Framework} v${FRAMEWORK_VERSION}
 
 EOF
     echo -e "${RESET}"

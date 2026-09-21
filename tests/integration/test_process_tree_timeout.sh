@@ -66,7 +66,7 @@ PARENT_PID_FILE="$TMP_DIR/parent.pid"
 CHILD_PID_FILE="$TMP_DIR/child.pid"
 
 # Mock stage that spawns a long-lived child process and waits on it
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 mock_stage_with_child() {
     printf '%s' "$BASHPID" > "$PARENT_PID_FILE"
     sleep 60 &

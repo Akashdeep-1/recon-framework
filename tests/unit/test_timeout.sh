@@ -36,7 +36,7 @@ assert_equals() {
 echo "Running Unit Tests: run_with_timeout Supervisor..."
 
 # 1. Successful command returns 0
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_success() {
     return 0
 }
@@ -45,7 +45,7 @@ run_with_timeout 2 cmd_success || status_ok=$?
 assert_equals "run_with_timeout: successful command returns 0" "0" "$status_ok"
 
 # 2. Non-zero command preserves specific exit code
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_fail_37() {
     return 37
 }
@@ -53,7 +53,7 @@ status_37=0
 run_with_timeout 2 cmd_fail_37 || status_37=$?
 assert_equals "run_with_timeout: preserves custom non-zero exit code (37)" "37" "$status_37"
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_fail_1() {
     return 1
 }
@@ -62,7 +62,7 @@ run_with_timeout 2 cmd_fail_1 || status_1=$?
 assert_equals "run_with_timeout: preserves exit code 1" "1" "$status_1"
 
 # 3. Timeout returns code 124
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_hang() {
     sleep 5
 }
@@ -71,7 +71,7 @@ run_with_timeout 1 cmd_hang || status_to=$?
 assert_equals "run_with_timeout: timed out command returns exit code 124" "124" "$status_to"
 
 # 4. SIGKILL fallback: process ignoring SIGTERM is killed and returns 124
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_ignore_term() {
     trap '' TERM
     sleep 5
@@ -85,7 +85,7 @@ assert_equals "run_with_timeout: ACTIVE_CHILD_PIDS array is completely empty aft
     "0" "${#ACTIVE_CHILD_PIDS[@]}"
 
 # 6. Zero or negative timeout bypasses watcher
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cmd_instant() {
     return 0
 }
