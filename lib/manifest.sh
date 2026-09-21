@@ -221,6 +221,24 @@ init_manifest() {
         resume_bool="true"
     fi
 
+    # In resumption mode with an existing manifest, preserve previous stage state
+    if [[ "$resume_bool" == "true" && -f "$manifest_file" ]]; then
+        local temp_manifest
+        temp_manifest="$(mktemp "${manifest_file}.tmp.XXXXXX" 2>/dev/null || printf '%s.tmp.%s' "$manifest_file" "$$")"
+        sed -E \
+            -e 's/^[[:space:]]*"status":[[:space:]]*"[^"]*"/  "status": "running"/' \
+            -e 's/"end_time":[[:space:]]*"[^"]*"/"end_time": null/' \
+            -e 's/"resume":[[:space:]]*(false|true)/"resume": true/' \
+            "$manifest_file" > "$temp_manifest" 2>/dev/null || true
+
+        if validate_json_file "$temp_manifest"; then
+            atomic_swap_manifest "$temp_manifest" "$manifest_file"
+            log_debug "Resumed existing manifest for $domain: $manifest_file"
+            return 0
+        fi
+        rm -f "$temp_manifest" 2>/dev/null || true
+    fi
+
     local safe_domain
     safe_domain="$(escape_json_string "$domain")"
     local safe_sel
