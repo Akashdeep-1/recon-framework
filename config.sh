@@ -57,7 +57,7 @@ DNSX_THREADS="${DNSX_THREADS:-$DEFAULT_THREADS}"
 
 # Naabu (Port Scanning) settings
 NAABU_RATE="${NAABU_RATE:-1000}"
-NAABU_PORTS="${NAABU_PORTS:-top-100}"
+NAABU_PORTS="${NAABU_PORTS:-100}"
 # Known common web ports to inspect with HTTPX from Naabu results
 WEB_PORTS="${WEB_PORTS:-80,443,8000,8080,8443,8888,9000,9443,3000,5000}"
 

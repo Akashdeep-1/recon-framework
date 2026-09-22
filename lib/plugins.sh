@@ -332,7 +332,12 @@ run_naabu() {
     fi
 
     local rate="${NAABU_RATE:-1000}"
-    local ports_flag="${NAABU_PORTS:-top-100}"
+    local ports_flag
+    if ! ports_flag="$(normalize_naabu_ports "${NAABU_PORTS:-100}")"; then
+        log_error "Invalid NAABU_PORTS value: '${NAABU_PORTS:-100}' (expected a positive integer or 'top-N')"
+        rm -f "$scoped_input" 2>/dev/null || true
+        return 1
+    fi
 
     if ! naabu \
         -list "$scoped_input" \

@@ -31,6 +31,42 @@ normalize_domain() {
     printf '%s' "$cleaned"
 }
 
+# Normalize and validate the NAABU_PORTS configuration value into a bare
+# positive integer suitable for naabu's -top-ports flag.
+# Accepted forms:
+#   - a bare positive integer, e.g. "100"
+#   - the "top-N" synonym,    e.g. "top-100"  (normalized to "100")
+# Empty/unset input defaults to "100".
+# Echoes the numeric value on success (return 0). On invalid input it prints
+# nothing to stdout and returns non-zero, leaving error reporting to the caller
+# so messages remain visible when the result is captured via $(...).
+normalize_naabu_ports() {
+    local raw="${1:-}"
+    local n
+
+    # Default to 100 when unset/empty
+    if [[ -z "$raw" ]]; then
+        printf '%s' "100"
+        return 0
+    fi
+
+    # Accept "top-N" synonym form; everything else used as-is
+    if [[ "$raw" =~ ^top- ]]; then
+        n="${raw#top-}"
+    else
+        n="$raw"
+    fi
+
+    # Must be a strictly positive integer
+    if [[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 )); then
+        # Strip any leading zeros so the value is canonical
+        printf '%d' "$n"
+        return 0
+    fi
+
+    return 1
+}
+
 # Validate that a domain is well-formed
 validate_domain() {
     local raw="$1"

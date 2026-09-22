@@ -25,6 +25,7 @@ echo ""
 
 SUITES=(
     "tests/unit/test_validation.sh"
+    "tests/unit/test_naabu_ports.sh"
     "tests/unit/test_parser.sh"
     "tests/unit/test_dependencies.sh"
     "tests/unit/test_timeout.sh"
@@ -36,6 +37,7 @@ SUITES=(
     "tests/integration/test_stage_selection.sh"
     "tests/integration/test_stage_skip.sh"
     "tests/integration/test_naabu_httpx_integration.sh"
+    "tests/integration/test_naabu_ports_flag.sh"
     "tests/integration/test_retry_behavior.sh"
     "tests/integration/test_process_tree_timeout.sh"
     "tests/integration/test_multi_target_isolation.sh"

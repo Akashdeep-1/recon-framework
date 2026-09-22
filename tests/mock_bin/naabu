@@ -5,13 +5,19 @@ if [[ "${MOCK_FAIL_NAABU:-0}" == "1" ]]; then
 fi
 inp=""
 out=""
+ports_val=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -list) inp="$2"; shift 2 ;;
         -o) out="$2"; shift 2 ;;
+        -top-ports) ports_val="$2"; shift 2 ;;
         *) shift ;;
     esac
 done
+# Capture the -top-ports argument for test verification when requested
+if [[ -n "${MOCK_NAABU_PORTS_FILE:-}" && -n "$ports_val" ]]; then
+    printf '%s' "$ports_val" > "$MOCK_NAABU_PORTS_FILE"
+fi
 MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE="$MOCK_DIR/../fixtures/naabu_sample.txt"
 if [[ -n "$out" && -f "$FIXTURE" ]]; then
@@ -22,4 +28,3 @@ if [[ -n "$out" && -f "$FIXTURE" ]]; then
     cat "$FIXTURE" > "$out"
 fi
 exit 0
-
