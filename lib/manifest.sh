@@ -41,12 +41,9 @@ validate_json_file() {
             jq empty "$json_file" >/dev/null 2>&1
             return $?
             ;;
-        python3)
-            python3 -c "import json, sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$json_file" >/dev/null 2>&1
-            return $?
-            ;;
-        python)
-            python -c "import json, sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$json_file" >/dev/null 2>&1
+        python3|python)
+            # Use stdin to avoid MSYS path incompatibility with Windows Python
+            "$engine" -c "import json, sys; json.load(sys.stdin)" < "$json_file" >/dev/null 2>&1
             return $?
             ;;
         *)
@@ -64,9 +61,9 @@ escape_json_string() {
     local raw="$1"
     local s="${raw//\\/\\\\}"
     s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
+    s="${s//$'\\n'/\\n}"
+    s="${s//$'\\r'/\\r}"
+    s="${s//$'\\t'/\\t}"
     printf '%s' "$s"
 }
 
@@ -120,16 +117,18 @@ get_manifest_stage_status() {
             fi
             ;;
         python3|python)
+            # Use stdin to avoid MSYS path incompatibility with Windows Python
             local st
-            st="$("$engine" -c '
+            st="$(cat "$manifest_file" | "$engine" -c '
 import json, sys
 try:
-    with open(sys.argv[1], encoding="utf-8") as f:
-        d = json.load(f)
-    print(d.get("stages", {}).get(sys.argv[2], {}).get("status", ""))
+    d = json.load(sys.stdin)
+    s = sys.argv[1]
+    v = d.get("stages", {}).get(s, {}).get("status", "")
+    print(v if v else "")
 except Exception:
     pass
-' "$manifest_file" "$stage" 2>/dev/null)"
+' "$stage" 2>/dev/null)"
             if [[ -n "$st" ]]; then
                 echo "$st"
                 return 0
@@ -172,16 +171,16 @@ get_manifest_overall_status() {
             fi
             ;;
         python3|python)
+            # Use stdin to avoid MSYS path incompatibility with Windows Python
             local st
-            st="$("$engine" -c '
+            st="$(cat "$manifest_file" | "$engine" -c '
 import json, sys
 try:
-    with open(sys.argv[1], encoding="utf-8") as f:
-        d = json.load(f)
+    d = json.load(sys.stdin)
     print(d.get("status", ""))
 except Exception:
     pass
-' "$manifest_file" 2>/dev/null)"
+' 2>/dev/null)"
             if [[ -n "$st" ]]; then
                 echo "$st"
                 return 0
@@ -334,11 +333,11 @@ update_stage_manifest() {
                    "$manifest_file" > "$temp_manifest" 2>/dev/null || true
                 ;;
             python3|python)
-                "$engine" -c '
+                # Use stdin/stdout to avoid MSYS path incompatibility with Windows Python
+                cat "$manifest_file" | "$engine" -c '
 import json, sys
-manifest_path, stage, status, dur, cnt, att, out_path = sys.argv[1:8]
-with open(manifest_path, "r", encoding="utf-8") as f:
-    data = json.load(f)
+data = json.load(sys.stdin)
+stage, status, dur, cnt, att = sys.argv[1:6]
 if "stages" not in data:
     data["stages"] = {}
 data["stages"][stage] = {
@@ -347,10 +346,9 @@ data["stages"][stage] = {
     "output_count": int(cnt),
     "attempts": int(att)
 }
-with open(out_path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-' "$manifest_file" "$stage" "$status" "$duration" "$count" "$attempts" "$temp_manifest" 2>/dev/null || true
+json.dump(data, sys.stdout, indent=2)
+sys.stdout.write("\n")
+' "$stage" "$status" "$duration" "$count" "$attempts" > "$temp_manifest" 2>/dev/null || true
                 ;;
         esac
     fi
@@ -399,17 +397,16 @@ finalize_manifest() {
                    "$manifest_file" > "$temp_manifest" 2>/dev/null || true
                 ;;
             python3|python)
-                "$engine" -c '
+                # Use stdin/stdout to avoid MSYS path incompatibility with Windows Python
+                cat "$manifest_file" | "$engine" -c '
 import json, sys
-manifest_path, status, end_time, out_path = sys.argv[1:5]
-with open(manifest_path, "r", encoding="utf-8") as f:
-    data = json.load(f)
+data = json.load(sys.stdin)
+status, end_time = sys.argv[1:3]
 data["status"] = status
 data["end_time"] = end_time
-with open(out_path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-' "$manifest_file" "$overall_status" "$end_time" "$temp_manifest" 2>/dev/null || true
+json.dump(data, sys.stdout, indent=2)
+sys.stdout.write("\n")
+' "$overall_status" "$end_time" > "$temp_manifest" 2>/dev/null || true
                 ;;
         esac
     fi

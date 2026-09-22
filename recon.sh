@@ -206,6 +206,15 @@ main() {
     # Parse CLI flags, options, and target domain(s)
     parse_cli_args "$@"
 
+    # Handle --self-test (exits without requiring a target)
+    if [[ "${SELF_TEST:-0}" -eq 1 ]]; then
+        if run_self_test; then
+            exit 0
+        else
+            exit 1
+        fi
+    fi
+
     print_banner
 
     local total_targets=${#TARGET_DOMAINS[@]}

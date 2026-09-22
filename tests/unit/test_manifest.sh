@@ -45,7 +45,7 @@ assert_true "init_manifest: creates manifest.json file" \
     test -f "$MANIFEST_FILE"
 
 assert_true "init_manifest: output is valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 assert_true "init_manifest: records target domain" \
     grep -q "\"target\": \"$TARGET\"" "$MANIFEST_FILE"
@@ -81,35 +81,35 @@ update_stage_manifest "$TMP_DIR" "subdomains" "running" 0 0
 assert_true "update_stage_manifest: transitions to running" \
     grep -q "\"subdomains\": { \"status\": \"running\"" "$MANIFEST_FILE"
 assert_true "update_stage_manifest running: remains valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 # 3. Test update_stage_manifest: success with duration and count
 update_stage_manifest "$TMP_DIR" "subdomains" "success" 15 42 1
 assert_true "update_stage_manifest: transitions to success with metrics" \
     grep -q "\"subdomains\": { \"status\": \"success\", \"duration_seconds\": 15, \"output_count\": 42, \"attempts\": 1 }" "$MANIFEST_FILE"
 assert_true "update_stage_manifest success: remains valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 # 4. Test update_stage_manifest: skipped
 update_stage_manifest "$TMP_DIR" "ports" "skipped" 0 0 0
 assert_true "update_stage_manifest: transitions to skipped" \
     grep -q "\"ports\": { \"status\": \"skipped\", \"duration_seconds\": 0, \"output_count\": 0, \"attempts\": 0 }" "$MANIFEST_FILE"
 assert_true "update_stage_manifest skipped: remains valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 # 5. Test update_stage_manifest: resumed
 update_stage_manifest "$TMP_DIR" "dns" "resumed" 0 10 0
 assert_true "update_stage_manifest: transitions to resumed" \
     grep -q "\"dns\": { \"status\": \"resumed\", \"duration_seconds\": 0, \"output_count\": 10, \"attempts\": 0 }" "$MANIFEST_FILE"
 assert_true "update_stage_manifest resumed: remains valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 # 6. Test update_stage_manifest: failed
 update_stage_manifest "$TMP_DIR" "live" "failed" 5 0 2
 assert_true "update_stage_manifest: transitions to failed" \
     grep -q "\"live\": { \"status\": \"failed\", \"duration_seconds\": 5, \"output_count\": 0, \"attempts\": 2 }" "$MANIFEST_FILE"
 assert_true "update_stage_manifest failed: remains valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 # 7. Test finalize_manifest: success
 finalize_manifest "$TMP_DIR" "success"
@@ -120,7 +120,7 @@ assert_true "finalize_manifest: end_time is populated" \
     grep -E -q "\"end_time\": \"[0-9]{4}-[0-9]{2}-[0-9]{2}" "$MANIFEST_FILE"
 
 assert_true "finalize_manifest: final document is valid JSON" \
-    python -m json.tool "$MANIFEST_FILE" >/dev/null
+    python -c "import json, sys; json.load(sys.stdin)" < "$MANIFEST_FILE"
 
 echo "Manifest unit tests completed: $PASSED passed, $FAILED failed."
 if (( FAILED > 0 )); then

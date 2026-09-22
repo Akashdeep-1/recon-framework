@@ -49,6 +49,8 @@ SCRIPTS=(
     tests/unit/test_timeout.sh
     tests/unit/test_cli_args.sh
     tests/unit/test_manifest.sh
+    tests/unit/test_manifest_hardening.sh
+    tests/unit/test_self_test.sh
     tests/integration/test_pipeline_e2e.sh
     tests/integration/test_pipeline_failure.sh
     tests/integration/test_pipeline_resumption.sh
@@ -210,7 +212,7 @@ echo "  PASS: Status 'failed' verified."
 # Manifest finalization and JSON validity
 finalize_manifest "$TEST_M_DIR" "failed"
 grep -q '"status": "failed"' "$TEST_M_DIR/manifest.json"
-python -m json.tool "$TEST_M_DIR/manifest.json" >/dev/null
+python -c "import json, sys; json.load(sys.stdin)" < "$TEST_M_DIR/manifest.json"
 echo "  PASS: Manifest finalized and validated as syntactically correct JSON."
 rm -rf "$TEST_M_DIR"
 

@@ -94,6 +94,17 @@ status_inval=0
 bash "$ROOT_DIR/recon.sh" -d "-invalid.com" >/dev/null 2>&1 || status_inval=$?
 assert_equals "recon.sh -d -invalid.com: exits with code 1" "1" "$status_inval"
 
+# 6. --self-test exits 0 without requiring a target
+status_self=0
+bash "$ROOT_DIR/recon.sh" --self-test >/dev/null 2>&1 || status_self=$?
+assert_equals "recon.sh --self-test: returns 0 without -d" "0" "$status_self"
+
+# 7. --self-test works with mock binaries in PATH
+export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+status_self_mock=0
+bash "$ROOT_DIR/recon.sh" --self-test >/dev/null 2>&1 || status_self_mock=$?
+assert_equals "recon.sh --self-test: returns 0 with mock binaries" "0" "$status_self_mock"
+
 echo "CLI argument parsing unit tests completed: $PASSED passed, $FAILED failed."
 if (( FAILED > 0 )); then
     exit 1
