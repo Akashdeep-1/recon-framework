@@ -57,11 +57,16 @@ normalize_naabu_ports() {
         n="$raw"
     fi
 
-    # Must be a strictly positive integer
-    if [[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 )); then
-        # Strip any leading zeros so the value is canonical
-        printf '%d' "$n"
-        return 0
+    # Must be a strictly positive decimal integer. The regex guarantees n
+    # contains only [0-9] digits, so base-10 arithmetic is safe and cannot
+    # receive an invalid value. Using 10# forces DECIMAL interpretation of
+    # leading-zero values (e.g. "010" -> 10, "018" -> 18), not octal.
+    if [[ "$n" =~ ^[0-9]+$ ]]; then
+        n=$((10#$n))
+        if (( n > 0 )); then
+            printf '%d' "$n"
+            return 0
+        fi
     fi
 
     return 1

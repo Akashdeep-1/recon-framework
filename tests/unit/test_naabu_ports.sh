@@ -76,6 +76,12 @@ assert_equals "normalize_naabu_ports: '65535' remains '65535'" \
 
 assert_equals "normalize_naabu_ports: leading-zero '007' canonicalizes to '7'" \
     "7" "$(normalize_naabu_ports '007')"
+# Leading zeros must be interpreted as DECIMAL (Bash otherwise parses them as
+# octal). Regression for the octal misparse: 010 -> 10 (not 8), 018 -> 18.
+assert_equals "normalize_naabu_ports: leading-zero '010' canonicalizes to '10' (decimal, not octal 8)" \
+    "10" "$(normalize_naabu_ports '010')"
+assert_equals "normalize_naabu_ports: leading-zero '018' canonicalizes to '18' (decimal, was octal error)" \
+    "18" "$(normalize_naabu_ports '018')"
 
 assert_equals "normalize_naabu_ports: empty/unset defaults to '100'" \
     "100" "$(normalize_naabu_ports '')"
@@ -105,6 +111,8 @@ assert_return 1 "normalize_naabu_ports: '1.5' rejected (non-integer)" \
 
 assert_return 1 "normalize_naabu_ports: '100 200' rejected (whitespace)" \
     normalize_naabu_ports "100 200"
+assert_return 1 "normalize_naabu_ports: '0x10' rejected (non-decimal hex prefix)" \
+    normalize_naabu_ports "0x10"
 
 # --- Invalid input must not echo anything to stdout ---
 
