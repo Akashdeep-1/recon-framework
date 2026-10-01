@@ -151,6 +151,33 @@ Execution Control:
   --retries <count>           Max retry attempts on stage failure (default: 1)
 ```
 
+## Configuration
+
+The framework is configured via environment variables (with defaults in `config.sh`). Set them in the shell or export them before invoking `recon.sh`.
+
+### Naabu (Port Scanning)
+
+- **NAABU_RATE** *(default: `1000`)* — Maximum packets per second sent to Naabu during the port-scan stage.
+- **NAABU_PORTS** *(default: `100`)* — Controls how many ports Naabu scans. Accepts a bare positive integer (e.g. `100`) or the `top-N` synonym (e.g. `top-100`); both are normalized to the numeric value passed to Naabu's `-top-ports` flag. Empty/unset defaults to `100`. Invalid values abort the ports stage with a clear error.
+
+Examples:
+```bash
+# Top 100 ports (default)
+NAABU_PORTS=100 ./recon.sh -d example.com
+
+# Top 1000 ports via the top-N synonym
+NAABU_PORTS=top-1000 ./recon.sh -d example.com
+
+# Throttle Naabu's scan rate
+NAABU_RATE=500 ./recon.sh -d example.com
+```
+
+> **NAABU_PORTS vs WEB_PORTS:** `NAABU_PORTS` controls how many ports Naabu scans; `WEB_PORTS` controls which of those discovered ports are subsequently probed for HTTP/web services. Increasing `NAABU_PORTS` does **not** automatically expand `WEB_PORTS` — they are independent.
+
+### HTTPX (Web Probing)
+
+- **WEB_PORTS** *(default: `80,443,8000,8080,8443,8888,9000,9443,3000,5000`)* — Comma-separated list of ports treated as HTTP/web candidates for HTTPX probing against Naabu discoveries.
+
 ---
 
 ## Workspace Structure

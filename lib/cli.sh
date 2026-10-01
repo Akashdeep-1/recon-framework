@@ -184,6 +184,10 @@ run_self_test() {
         log_error "Invalid ENFORCE_STRICT_SCOPE: $ENFORCE_STRICT_SCOPE"
         config_issues=$((config_issues + 1))
     fi
+    if ! normalize_naabu_ports "$NAABU_PORTS" >/dev/null 2>&1; then
+        log_error "Invalid NAABU_PORTS: $NAABU_PORTS (expected a number or top-N)"
+        config_issues=$((config_issues + 1))
+    fi
     if (( config_issues == 0 )); then
         log_success "Configuration values valid (timeout=$STAGE_TIMEOUT, retries=$STAGE_RETRIES)"
         checks_passed=$((checks_passed + 1))

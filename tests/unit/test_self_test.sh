@@ -107,6 +107,23 @@ assert_true "run_self_test: STAGE_RETRIES is valid non-negative integer" \
 assert_true "run_self_test: ENFORCE_STRICT_SCOPE is boolean (true or false)" \
     bash -c "case \"\$1\" in true|false) :;; *) exit 1;; esac" _ "$ENFORCE_STRICT_SCOPE"
 
+# Self-test: NAABU_PORTS configuration validation (delegates to the real
+# normalize_naabu_ports normalizer used by run_naabu)
+assert_equals "run_self_test: NAABU_PORTS valid via normalizer ($NAABU_PORTS)" \
+    "0" "$(normalize_naabu_ports "$NAABU_PORTS" >/dev/null 2>&1; echo $?)"
+assert_equals "run_self_test: top-N format accepted (top-100 -> 100)" \
+    "100" "$(normalize_naabu_ports 'top-100')"
+
+# Self-test: invalid NAABU_PORTS fails the stage and reports a clear error
+INVALID_NAABU_DIR="$(mktemp -d)"
+INVALID_NAABU_EXIT=0
+INVALID_NAABU_OUT="$(NAABU_PORTS="abc" OUTPUT_DIR="$INVALID_NAABU_DIR" run_self_test 2>&1)" || INVALID_NAABU_EXIT=$?
+rm -rf "$INVALID_NAABU_DIR"
+assert_equals "run_self_test: rejects invalid NAABU_PORTS (non-zero exit)" "1" \
+    "$(( INVALID_NAABU_EXIT != 0 ? 1 : 0 ))"
+assert_true "run_self_test: logs 'Invalid NAABU_PORTS' error for bad config" \
+    bash -c "grep -q \"Invalid NAABU_PORTS\" <<< \"\$1\"" _ "$INVALID_NAABU_OUT"
+
 # 8. Self-test via CLI (--self-test flag) works end-to-end
 CLI_SELF_TEST=0
 bash "$ROOT_DIR/recon.sh" --self-test >/dev/null 2>&1 || CLI_SELF_TEST=$?
