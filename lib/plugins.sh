@@ -17,6 +17,14 @@ if ! command -v parse_hosts_jsonl >/dev/null 2>&1; then
     # shellcheck source=./parser.sh
     source "$PLUGINS_LIB_DIR/parser.sh"
 fi
+if ! command -v jsonl_tool_start >/dev/null 2>&1; then
+    # shellcheck source=./jsonl_logger.sh
+    source "$PLUGINS_LIB_DIR/jsonl_logger.sh"
+fi
+if ! command -v rate_limit_apply >/dev/null 2>&1; then
+    # shellcheck source=./rate_limit.sh
+    source "$PLUGINS_LIB_DIR/rate_limit.sh"
+fi
 
 # Create the parent directory for a stage output file.
 prepare_output_directory() {
@@ -98,9 +106,11 @@ run_subfinder() {
     local output_file="$2"
 
     log_info "Running Subfinder on $domain"
+    jsonl_tool_start "subfinder" "subdomains" "$domain"
 
     if ! command_exists subfinder; then
         log_error "Subfinder is not installed."
+        jsonl_tool_error "subfinder" "subdomains" "not installed"
         return 1
     fi
 
@@ -108,10 +118,16 @@ run_subfinder() {
         return 1
     fi
 
-    if ! subfinder -d "$domain" -silent -o "$output_file"; then
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
+    if ! rate_limit_apply subfinder subfinder -d "$domain" -silent -o "$output_file"; then
         log_error "Subfinder failed for $domain"
+        jsonl_tool_error "subfinder" "subdomains" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
 
     if ! ensure_result_file "$output_file"; then
         return 1
@@ -124,6 +140,7 @@ run_subfinder() {
     fi
 
     log_stage_result "Subfinder" "$count" "subdomains"
+    jsonl_tool_complete "subfinder" "subdomains" "success" "$tool_duration_ms" "$count"
 }
 
 # Run Assetfinder for passive subdomain enumeration
@@ -132,9 +149,11 @@ run_assetfinder() {
     local output_file="$2"
 
     log_info "Running Assetfinder on $domain"
+    jsonl_tool_start "assetfinder" "subdomains" "$domain"
 
     if ! command_exists assetfinder; then
         log_error "Assetfinder is not installed."
+        jsonl_tool_error "assetfinder" "subdomains" "not installed"
         return 1
     fi
 
@@ -142,11 +161,21 @@ run_assetfinder() {
         return 1
     fi
 
-    assetfinder --subs-only "$domain" | sort -u > "$output_file"
-    local pipeline_status=("${PIPESTATUS[@]}")
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
 
+    if ! rate_limit_apply assetfinder assetfinder --subs-only "$domain" | sort -u > "$output_file"; then
+        log_error "Assetfinder failed for $domain"
+        jsonl_tool_error "assetfinder" "subdomains" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
+        return 1
+    fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
+
+    local pipeline_status=("${PIPESTATUS[@]}")
     if [[ "${pipeline_status[0]}" -ne 0 || "${pipeline_status[1]}" -ne 0 ]]; then
         log_error "Assetfinder failed for $domain"
+        jsonl_tool_error "assetfinder" "subdomains" "execution failed (pipeline)" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
 
@@ -161,6 +190,7 @@ run_assetfinder() {
     fi
 
     log_stage_result "Assetfinder" "$count" "subdomains"
+    jsonl_tool_complete "assetfinder" "subdomains" "success" "$tool_duration_ms" "$count"
 }
 
 # Merge, scope-filter, and deduplicate subdomain results
@@ -223,9 +253,11 @@ run_dnsx() {
     local output_file="$3"
 
     log_info "Running DNSX"
+    jsonl_tool_start "dnsx" "dns" "$domain"
 
     if ! command_exists dnsx; then
         log_error "DNSX is not installed."
+        jsonl_tool_error "dnsx" "dns" "not installed"
         return 1
     fi
 
@@ -246,6 +278,7 @@ run_dnsx() {
     if [[ ! -s "$scoped_input" ]]; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_stage_skipped "DNSX" "no in-scope subdomains found"
+        jsonl_tool_complete "dnsx" "dns" "skipped" "0" "0"
         if ! : > "$output_file"; then
             log_error "Failed to create DNSX output file: $output_file"
             return 1
@@ -253,12 +286,18 @@ run_dnsx() {
         return 0
     fi
 
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
     local threads="${DNSX_THREADS:-50}"
-    if ! dnsx -l "$scoped_input" -silent -t "$threads" -o "$output_file"; then
+    if ! rate_limit_apply dnsx dnsx -l "$scoped_input" -silent -t "$threads" -o "$output_file"; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_error "DNSX failed"
+        jsonl_tool_error "dnsx" "dns" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
     rm -f "$scoped_input" 2>/dev/null || true
 
     if ! ensure_result_file "$output_file"; then
@@ -289,6 +328,7 @@ run_dnsx() {
     fi
 
     log_stage_result "DNSX" "$count" "resolved hosts"
+    jsonl_tool_complete "dnsx" "dns" "success" "$tool_duration_ms" "$count"
 }
 
 # Discover open ports using Naabu
@@ -298,9 +338,11 @@ run_naabu() {
     local output_file="$3"
 
     log_info "Running Naabu"
+    jsonl_tool_start "naabu" "ports" "$domain"
 
     if ! command_exists naabu; then
         log_error "Naabu is not installed."
+        jsonl_tool_error "naabu" "ports" "not installed"
         return 1
     fi
 
@@ -324,6 +366,7 @@ run_naabu() {
     if [[ ! -s "$scoped_input" ]]; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_stage_skipped "Naabu" "no resolved hosts found"
+        jsonl_tool_complete "naabu" "ports" "skipped" "0" "0"
         if ! : > "$output_file"; then
             log_error "Failed to create Naabu output file: $output_file"
             return 1
@@ -331,15 +374,20 @@ run_naabu() {
         return 0
     fi
 
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
     local rate="${NAABU_RATE:-1000}"
     local ports_flag
     if ! ports_flag="$(normalize_naabu_ports "${NAABU_PORTS:-100}")"; then
         log_error "Invalid NAABU_PORTS value: '${NAABU_PORTS:-100}' (expected a positive integer or 'top-N')"
         rm -f "$scoped_input" 2>/dev/null || true
+        jsonl_tool_error "naabu" "ports" "invalid ports config" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
 
-    if ! naabu \
+    if ! rate_limit_apply naabu \
+        naabu \
         -list "$scoped_input" \
         -silent \
         -rate "$rate" \
@@ -347,8 +395,11 @@ run_naabu() {
         -o "$output_file"; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_error "Naabu failed"
+        jsonl_tool_error "naabu" "ports" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
     rm -f "$scoped_input" 2>/dev/null || true
 
     if ! ensure_result_file "$output_file"; then
@@ -375,6 +426,7 @@ run_naabu() {
     fi
 
     log_stage_result "Naabu" "$count" "open ports"
+    jsonl_tool_complete "naabu" "ports" "success" "$tool_duration_ms" "$count"
 }
 
 # Probe live HTTP/HTTPS services using HTTPX
@@ -384,9 +436,11 @@ run_httpx() {
     local output_file="$3"
 
     log_info "Running HTTPX"
+    jsonl_tool_start "httpx" "live" "$domain"
 
     if ! command_exists httpx; then
         log_error "HTTPX is not installed."
+        jsonl_tool_error "httpx" "live" "not installed"
         return 1
     fi
 
@@ -401,6 +455,7 @@ run_httpx() {
 
     if [[ ! -s "$input_file" ]]; then
         log_stage_skipped "HTTPX" "no target endpoints found"
+        jsonl_tool_complete "httpx" "live" "skipped" "0" "0"
         if ! : > "$output_file"; then
             log_error "Failed to create HTTPX output file: $output_file"
             return 1
@@ -408,11 +463,15 @@ run_httpx() {
         return 0
     fi
 
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
     local threads="${HTTPX_THREADS:-50}"
     local timeout="${HTTPX_TIMEOUT:-10}"
     local rate_limit="${HTTPX_RATE_LIMIT:-150}"
 
-    if ! httpx \
+    if ! rate_limit_apply httpx \
+        httpx \
         -l "$input_file" \
         -silent \
         -status-code \
@@ -424,8 +483,11 @@ run_httpx() {
         -rate-limit "$rate_limit" \
         -o "$output_file"; then
         log_error "HTTPX failed"
+        jsonl_tool_error "httpx" "live" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
 
     if ! ensure_result_file "$output_file"; then
         return 1
@@ -438,6 +500,7 @@ run_httpx() {
     fi
 
     log_stage_result "HTTPX" "$count" "live HTTP services"
+    jsonl_tool_complete "httpx" "live" "success" "$tool_duration_ms" "$count"
 }
 
 # Extract clean in-scope URLs from HTTPX output
@@ -483,9 +546,11 @@ run_katana() {
     local output_file="$3"
 
     log_info "Running Katana"
+    jsonl_tool_start "katana" "crawling" "$domain"
 
     if ! command_exists katana; then
         log_error "Katana is not installed or not in PATH."
+        jsonl_tool_error "katana" "crawling" "not installed"
         return 1
     fi
 
@@ -506,12 +571,16 @@ run_katana() {
     if [[ ! -s "$scoped_input" ]]; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_stage_skipped "Katana" "no live in-scope URLs found"
+        jsonl_tool_complete "katana" "crawling" "skipped" "0" "0"
         if ! : > "$output_file"; then
             log_error "Failed to create Katana output file: $output_file"
             return 1
         fi
         return 0
     fi
+
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
 
     local concurrency="${KATANA_CONCURRENCY:-10}"
     local depth="${KATANA_DEPTH:-2}"
@@ -520,7 +589,8 @@ run_katana() {
     local raw_output
     raw_output="$(mktemp "${output_file}.raw.XXXXXX" 2>/dev/null || printf '%s.raw' "$output_file")"
 
-    if ! katana \
+    if ! rate_limit_apply katana \
+        katana \
         -list "$scoped_input" \
         -silent \
         -c "$concurrency" \
@@ -529,8 +599,11 @@ run_katana() {
         -o "$raw_output"; then
         rm -f "$scoped_input" "$raw_output" 2>/dev/null || true
         log_error "Katana failed"
+        jsonl_tool_error "katana" "crawling" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
     rm -f "$scoped_input" 2>/dev/null || true
 
     # Ensure crawled URLs stay in scope
@@ -552,6 +625,7 @@ run_katana() {
     fi
 
     log_stage_result "Katana" "$count" "URLs"
+    jsonl_tool_complete "katana" "crawling" "success" "$tool_duration_ms" "$count"
 }
 
 # Run Nuclei vulnerability scanning
@@ -561,9 +635,11 @@ run_nuclei() {
     local output_file="$3"
 
     log_info "Running Nuclei"
+    jsonl_tool_start "nuclei" "vuln" "$domain"
 
     if ! command_exists nuclei; then
         log_error "Nuclei is not installed."
+        jsonl_tool_error "nuclei" "vuln" "not installed"
         return 1
     fi
 
@@ -584,6 +660,7 @@ run_nuclei() {
     if [[ ! -s "$scoped_input" ]]; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_stage_skipped "Nuclei" "no live URLs found"
+        jsonl_tool_complete "nuclei" "vuln" "skipped" "0" "0"
         if ! : > "$output_file"; then
             log_error "Failed to create Nuclei output file: $output_file"
             return 1
@@ -591,13 +668,17 @@ run_nuclei() {
         return 0
     fi
 
+    local tool_start_epoch
+    tool_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
     local concurrency="${NUCLEI_CONCURRENCY:-25}"
     local rate_limit="${NUCLEI_RATE_LIMIT:-150}"
     local timeout="${NUCLEI_TIMEOUT:-10}"
     local severity="${NUCLEI_SEVERITY:-info,low,medium,high,critical}"
     local tags="${NUCLEI_TAGS:-cve,misconfig,exposure,vulnerability}"
 
-    if ! nuclei \
+    if ! rate_limit_apply nuclei \
+        nuclei \
         -l "$scoped_input" \
         -silent \
         -jsonl \
@@ -609,8 +690,11 @@ run_nuclei() {
         -o "$output_file"; then
         rm -f "$scoped_input" 2>/dev/null || true
         log_error "Nuclei scan failed"
+        jsonl_tool_error "nuclei" "vuln" "execution failed" "$(($(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch))"
         return 1
     fi
+
+    local tool_duration_ms=$(( $(date +%s%3N 2>/dev/null || date +%s) - tool_start_epoch ))
     rm -f "$scoped_input" 2>/dev/null || true
 
     if ! ensure_result_file "$output_file"; then
@@ -628,4 +712,5 @@ run_nuclei() {
     fi
 
     log_stage_result "Nuclei" "$count" "findings"
+    jsonl_tool_complete "nuclei" "vuln" "success" "$tool_duration_ms" "$count"
 }

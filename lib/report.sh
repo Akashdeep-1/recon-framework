@@ -10,11 +10,59 @@ if ! command -v log_error >/dev/null 2>&1; then
     source "$REPORT_LIB_DIR/logger.sh"
 fi
 
+# HTML escape function for output sanitization
+report_html_escape() {
+    local str="$1"
+    str="${str//&/\&amp;}"
+    str="${str//</\&lt;}"
+    str="${str//>/\&gt;}"
+    str="${str//\"/\&quot;}"
+    str="${str//\'/\&#39;}"
+    printf "%s" "$str"
+}
+
+# Markdown escape function for output sanitization
+report_md_escape() {
+    local str="$1"
+    str="${str//\\/\\\\}"
+    str="${str//\*/\\*}"
+    str="${str//_/\\_}"
+    str="${str//\`/\\\`}"
+    str="${str//#/\\#}"
+    str="${str//+/\\+}"
+    str="${str//!/\\!}"
+    str="${str//\[/\\[}"
+    str="${str//\]/\\]}"
+    str="${str//\(/\\(}"
+    str="${str//\)/\\)}"
+    str="${str//</\\<}"
+    str="${str//>/\\>}"
+    printf "%s" "$str"
+}
+
+# Sanitize value for safe inclusion in reports
+report_sanitize() {
+    local value="$1"
+    local format="${2:-text}"
+
+    case "$format" in
+        html)
+            report_html_escape "$value"
+            ;;
+        md|markdown)
+            report_md_escape "$value"
+            ;;
+        *)
+            printf "%s" "$value" | tr -cd "[:print:]\n\t"
+            ;;
+    esac
+}
+
 # Count lines safely in an optional file
 _safe_line_count() {
     local f="$1"
     if [[ -f "$f" ]]; then
-        wc -l < "$f" | tr -d ' '
+        wc -l < "$f" | tr -d " "
     else
         echo "0"
     fi
@@ -37,10 +85,13 @@ generate_markdown_report() {
     local scan_date
     scan_date="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
 
-    cat << EOF > "$output_md"
-# Reconnaissance Assessment Report: ${domain}
+    local safe_domain
+    safe_domain="$(report_sanitize "$domain" "md")"
 
-**Target Domain:** \`${domain}\`<br>
+    cat << EOF > "$output_md"
+# Reconnaissance Assessment Report: ${safe_domain}
+
+**Target Domain:** \`${safe_domain}\`<br>
 **Generated:** \`${scan_date}\`<br>
 **Tool:** Recon Framework v${FRAMEWORK_VERSION}
 
@@ -65,7 +116,11 @@ generate_markdown_report() {
 EOF
 
     if [[ -f "${workspace}/live/urls.txt" && -s "${workspace}/live/urls.txt" ]]; then
-        sed 's/^/- /' "${workspace}/live/urls.txt" | head -n 10 >> "$output_md"
+        sed "s/^/- /" "${workspace}/live/urls.txt" | head -n 10 | while IFS= read -r url; do
+            local safe_url
+            safe_url="$(report_sanitize "$url" "md")"
+            echo "- ${safe_url}" >> "$output_md"
+        done
     else
         echo "_No live HTTP services recorded._" >> "$output_md"
     fi
@@ -76,7 +131,11 @@ EOF
 EOF
 
     if [[ -f "${workspace}/ports/naabu.txt" && -s "${workspace}/ports/naabu.txt" ]]; then
-        sed 's/^/- /' "${workspace}/ports/naabu.txt" | head -n 10 >> "$output_md"
+        sed "s/^/- /" "${workspace}/ports/naabu.txt" | head -n 10 | while IFS= read -r port; do
+            local safe_port
+            safe_port="$(report_sanitize "$port" "md")"
+            echo "- ${safe_port}" >> "$output_md"
+        done
     else
         echo "_No open ports recorded._" >> "$output_md"
     fi
@@ -108,13 +167,16 @@ generate_html_report() {
     local scan_date
     scan_date="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
 
+    local safe_domain
+    safe_domain="$(report_sanitize "$domain" "html")"
+
     cat << EOF > "$output_html"
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recon Report - ${domain}</title>
+    <title>Recon Report - ${safe_domain}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
         .container { max-width: 960px; margin: 0 auto; background: #1e293b; border-radius: 8px; padding: 2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
@@ -133,7 +195,7 @@ generate_html_report() {
 <body>
 <div class="container">
     <h1>Reconnaissance Report</h1>
-    <div class="meta">Target: <strong>${domain}</strong> | Scan Date: ${scan_date}</div>
+    <div class="meta">Target: <strong>${safe_domain}</strong> | Scan Date: ${scan_date}</div>
 
     <div class="grid">
         <div class="card"><div class="num">${subdomains_count}</div><div class="label">Subdomains</div></div>
@@ -183,28 +245,27 @@ generate_multi_target_summary() {
     scan_date="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
 
     {
-        cat << EOF
-# Multi-Target Reconnaissance Assessment Report
-
-**Generated:** \`${scan_date}\`<br>
-**Total Targets:** \`${#targets[@]}\`<br>
-**Tool:** Recon Framework v${FRAMEWORK_VERSION}
-
----
-
-## Target Summary Matrix
-
-| Target Domain | Status | Subdomains | Resolved Hosts | Open Ports | Live URLs | Findings |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-EOF
+        echo "# Multi-Target Reconnaissance Assessment Report"
+        echo ""
+        echo "**Generated:** \`${scan_date}\`<br>"
+        echo "**Total Targets:** \`${#targets[@]}\`<br>"
+        echo "**Tool:** Recon Framework v${FRAMEWORK_VERSION}"
+        echo ""
+        echo "---"
+        echo ""
+        echo "## Target Summary Matrix"
+        echo ""
+        echo "| Target Domain | Status | Subdomains | Resolved Hosts | Open Ports | Live URLs | Findings |"
+        echo "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
 
         for target in "${targets[@]}"; do
             local ws="${output_base_dir}/${target}"
             local st="Unknown"
             if [[ -f "${ws}/manifest.json" ]]; then
-                if grep -q '"status":[[:space:]]*"success"' "${ws}/manifest.json"; then
+                local sp="\"status\"[[:space:]]*:[[:space:]]*"
+                if grep -q "${sp}\"success\"" "${ws}/manifest.json"; then
                     st="Success"
-                elif grep -q '"status":[[:space:]]*"failed"' "${ws}/manifest.json"; then
+                elif grep -q "${sp}\"failed\"" "${ws}/manifest.json"; then
                     st="Failed"
                 fi
             fi
@@ -216,18 +277,18 @@ EOF
             live_c="$(_safe_line_count "${ws}/live/urls.txt")"
             find_c="$(_safe_line_count "${ws}/nuclei/findings.jsonl")"
 
-            # shellcheck disable=SC2016
-            printf '| **%s** | `%s` | %s | %s | %s | %s | %s |\n' \
-                "$target" "$st" "$sub_c" "$res_c" "$port_c" "$live_c" "$find_c"
+            local safe_target
+            safe_target="$(report_sanitize "$target" "md")"
+
+            printf '| **%s** | %s | %s | %s | %s | %s | %s |\n' \
+                "${safe_target}" "${st}" "${sub_c}" "${res_c}" "${port_c}" "${live_c}" "${find_c}"
         done
 
-        cat << EOF
-
----
-*Notice: This report was generated for authorized security assessment purposes only.*
-EOF
+        echo ""
+        echo "---"
+        echo "*Notice: This report was generated for authorized security assessment purposes only.*"
     } > "$summary_md"
 
-    log_success "Multi-target summary report generated: $summary_md"
+    log_success "Multi-target summary report generated: ${summary_md}"
     return 0
 }

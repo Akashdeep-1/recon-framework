@@ -240,14 +240,26 @@ execute_subdomains_stage() {
     local assetfinder_output="$4"
 
     if [[ "${PARALLEL_PASSIVE:-true}" == "true" ]]; then
+        export BASE_DIR
         export -f _log_message run_subfinder run_assetfinder prepare_output_directory ensure_result_file count_result_lines log_stage_result log_info log_success log_warn log_error log_debug command_exists create_directory
         export FRAMEWORK_NAME FRAMEWORK_VERSION RED GREEN YELLOW BLUE CYAN RESET OUTPUT_DIR LOG_FILE VERBOSE
+        if command -v jsonl_tool_start >/dev/null 2>&1; then
+            export -f jsonl_emit jsonl_timestamp jsonl_escape jsonl_redact jsonl_tool_start jsonl_tool_complete jsonl_tool_error jsonl_stage_start jsonl_stage_complete jsonl_run_start jsonl_run_complete jsonl_generate_run_id 2>/dev/null || true
+            export JSONL_RUN_ID JSONL_LOG_FILE JSONL_ENABLED JSONL_STDOUT 2>/dev/null || true
+        fi
+        if command -v rate_limit_apply >/dev/null 2>&1; then
+            export -f rate_limit_configure rate_limit_get_rps rate_limit_get_burst rate_limit_validate rate_limit_apply 2>/dev/null || true
+            export RATE_LIMIT_GLOBAL RATE_LIMIT_CONFIGURED 2>/dev/null || true
+        fi
+
+        local sub_cmd="if ! command -v rate_limit_apply >/dev/null 2>&1 && [[ -n \"\${BASE_DIR:-}\" && -f \"\${BASE_DIR}/lib/rate_limit.sh\" ]]; then source \"\${BASE_DIR}/lib/rate_limit.sh\"; fi; if ! command -v jsonl_tool_start >/dev/null 2>&1 && [[ -n \"\${BASE_DIR:-}\" && -f \"\${BASE_DIR}/lib/jsonl_logger.sh\" ]]; then source \"\${BASE_DIR}/lib/jsonl_logger.sh\"; fi; run_subfinder '$domain' '$subfinder_output'"
+        local asset_cmd="if ! command -v rate_limit_apply >/dev/null 2>&1 && [[ -n \"\${BASE_DIR:-}\" && -f \"\${BASE_DIR}/lib/rate_limit.sh\" ]]; then source \"\${BASE_DIR}/lib/rate_limit.sh\"; fi; if ! command -v jsonl_tool_start >/dev/null 2>&1 && [[ -n \"\${BASE_DIR:-}\" && -f \"\${BASE_DIR}/lib/jsonl_logger.sh\" ]]; then source \"\${BASE_DIR}/lib/jsonl_logger.sh\"; fi; run_assetfinder '$domain' '$assetfinder_output'"
 
         run_parallel_stages \
             "Subfinder" \
-            "run_subfinder '$domain' '$subfinder_output'" \
+            "$sub_cmd" \
             "Assetfinder" \
-            "run_assetfinder '$domain' '$assetfinder_output'"
+            "$asset_cmd"
     else
         run_subfinder "$domain" "$subfinder_output" && run_assetfinder "$domain" "$assetfinder_output"
     fi && merge_subdomains "$subdomain_dir" "$domain"
