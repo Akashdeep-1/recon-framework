@@ -35,6 +35,7 @@ SUITES=(
     "tests/unit/test_manifest_hardening.sh"
     "tests/unit/test_self_test.sh"
     "tests/unit/test_dag.sh"
+    "tests/unit/test_dag_executor.sh"
     "tests/integration/test_stage_selection.sh"
     "tests/integration/test_stage_skip.sh"
     "tests/integration/test_naabu_httpx_integration.sh"

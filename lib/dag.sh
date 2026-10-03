@@ -499,7 +499,10 @@ dag_validate_commands() {
 dag_validate_all() {
     DAG_ERRORS=()
 
-    dag_load_canonical || return 1
+    # Load canonical DAG if not already loaded
+    if [[ -z "${DAG_LOADED:-}" ]]; then
+        dag_load_canonical || return 1
+    fi
 
     dag_validate_all_ids || return 1
     dag_validate_unique_ids || return 1
