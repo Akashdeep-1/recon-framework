@@ -51,7 +51,7 @@ DAG_EXEC_WORKSPACE=""
 DAG_EXEC_MAX_CONCURRENCY=1
 DAG_EXEC_ACTIVE_PIDS=()
 DAG_EXEC_ACTIVE_STAGES=()
-DAG_EXEC_CHILD_RESULTS=()
+declare -A DAG_EXEC_CHILD_RESULTS
 
 # ============================================
 # Initialize executor with validated DAG
