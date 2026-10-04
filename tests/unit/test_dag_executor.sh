@@ -75,7 +75,7 @@ reset_dag_state() {
 # Test: Sequential DAG execution (a -> b -> c)
 test_dag_exec_sequential() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c")
     DAG_STAGE_LABEL=("a" "b" "c")
     DAG_STAGE_DEPS=("" "a" "b")
@@ -89,22 +89,22 @@ test_dag_exec_sequential() {
     DAG_STAGE_RETRIES=(0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "")
     DAG_LOADED=1
-    
+
     mock_cmd_success() { return 0; }
     export -f mock_cmd_success
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
     local result=$?
-    
+
     assert_equals "Sequential DAG execution succeeds" 0 "$result"
     assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
     assert_equals "Stage b state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "b")"
     assert_equals "Stage c state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "c")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_cmd_success
 }
@@ -112,7 +112,7 @@ test_dag_exec_sequential() {
 # Test: Dependency enforcement - B cannot execute before A succeeds
 test_dag_exec_dependency_enforcement() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c")
     DAG_STAGE_LABEL=("a" "b" "c")
     DAG_STAGE_DEPS=("" "a" "b")
@@ -126,23 +126,23 @@ test_dag_exec_dependency_enforcement() {
     DAG_STAGE_RETRIES=(0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b() { return 0; }
     mock_c() { return 0; }
     export -f mock_a mock_b mock_c
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
-    
+
     # Verify all stages completed successfully (order verified by state)
     assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
     assert_equals "Stage b state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "b")"
     assert_equals "Stage c state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "c")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b mock_c
 }
@@ -150,7 +150,7 @@ test_dag_exec_dependency_enforcement() {
 # Test: Multiple independent stages (a and b independent, c depends on both)
 test_dag_exec_independent_stages() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c")
     DAG_STAGE_LABEL=("a" "b" "c")
     DAG_STAGE_DEPS=("" "" "a,b")
@@ -164,23 +164,23 @@ test_dag_exec_independent_stages() {
     DAG_STAGE_RETRIES=(0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b() { return 0; }
     mock_c() { return 0; }
     export -f mock_a mock_b mock_c
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
-    
+
     # Verify all stages completed successfully
     assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
     assert_equals "Stage b state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "b")"
     assert_equals "Stage c state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "c")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b mock_c
 }
@@ -188,7 +188,7 @@ test_dag_exec_independent_stages() {
 # Test: Failure propagation (A succeeds, B fails, C becomes blocked)
 test_dag_exec_failure_propagation() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c")
     DAG_STAGE_LABEL=("a" "b" "c")
     DAG_STAGE_DEPS=("" "a" "b")
@@ -202,24 +202,24 @@ test_dag_exec_failure_propagation() {
     DAG_STAGE_RETRIES=(0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b_fail() { return 1; }
     mock_c() { return 0; }
     export -f mock_a mock_b_fail mock_c
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
     local result=$?
-    
+
     assert_equals "FAIL_FAST returns 2" 2 "$result"
     assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
     assert_equals "Stage b state" "$DAG_STATE_FAILED" "$(dag_exec_get_state "b")"
     assert_equals "Stage c state" "$DAG_STATE_BLOCKED" "$(dag_exec_get_state "c")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b_fail mock_c
 }
@@ -227,7 +227,7 @@ test_dag_exec_failure_propagation() {
 # Test: FAIL_FAST stops execution
 test_dag_exec_fail_fast() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c" "d")
     DAG_STAGE_LABEL=("a" "b" "c" "d")
     DAG_STAGE_DEPS=("" "a" "b" "b")  # d depends on b, not a
@@ -241,24 +241,24 @@ test_dag_exec_fail_fast() {
     DAG_STAGE_RETRIES=(0 0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b_fail() { return 1; }
     mock_c() { return 0; }
     mock_d() { return 0; }
     export -f mock_a mock_b_fail mock_c mock_d
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "FAIL_FAST returns 2" 2 "$result"
     assert_equals "Stage d state (FAIL_FAST aborts all)" "$DAG_STATE_BLOCKED" "$(dag_exec_get_state "d")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b_fail mock_c mock_d
 }
@@ -267,7 +267,7 @@ test_dag_exec_fail_fast() {
 test_dag_exec_continue() {
     local exec_order=()
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c" "d")
     DAG_STAGE_LABEL=("a" "b" "c" "d")
     DAG_STAGE_DEPS=("" "a" "b" "a")
@@ -281,27 +281,27 @@ test_dag_exec_continue() {
     DAG_STAGE_RETRIES=(0 0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { exec_order+=("a"); return 0; }
     mock_b_fail() { exec_order+=("b"); return 1; }
     mock_c() { exec_order+=("c"); return 0; }
     mock_d() { exec_order+=("d"); return 0; }
     export -f mock_a mock_b_fail mock_c mock_d
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "CONTINUE returns 1 (partial failure)" 1 "$result"
-    assert_equals "Stage A state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
-    assert_equals "Stage B state" "$DAG_STATE_FAILED" "$(dag_exec_get_state "b")"
+    assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
+    assert_equals "Stage b state" "$DAG_STATE_FAILED" "$(dag_exec_get_state "b")"
     assert_equals "Stage C state (depends on B)" "$DAG_STATE_BLOCKED" "$(dag_exec_get_state "c")"
     assert_equals "Stage D state (independent)" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "d")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b_fail mock_c mock_d
 }
@@ -309,7 +309,7 @@ test_dag_exec_continue() {
 # Test: SKIP_DEPENDENTS blocks dependent stages
 test_dag_exec_skip_dependents() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b" "c" "d")
     DAG_STAGE_LABEL=("a" "b" "c" "d")
     DAG_STAGE_DEPS=("" "a" "b" "a")
@@ -323,37 +323,36 @@ test_dag_exec_skip_dependents() {
     DAG_STAGE_RETRIES=(0 0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b_fail() { return 1; }
     mock_c() { return 0; }
     mock_d() { return 0; }
     export -f mock_a mock_b_fail mock_c mock_d
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "SKIP_DEPENDENTS returns 1 (partial failure)" 1 "$result"
     assert_equals "Stage C state (depends on B with SKIP_DEPENDENTS)" "$DAG_STATE_BLOCKED" "$(dag_exec_get_state "c")"
     assert_equals "Stage D state (independent)" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "d")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b_fail mock_c mock_d
 }
 
 # Test: RETRY uses existing retry mechanism
 test_dag_exec_retry() {
-    local attempt_count=0
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b")
     DAG_STAGE_LABEL=("a" "b")
-    DAG_STAGE_DEPS=("" "A")
+    DAG_STAGE_DEPS=("" "a")
     DAG_STAGE_INPUTS=("input" "input")
     DAG_STAGE_OUTPUTS=("output" "output")
     DAG_STAGE_CMD=("mock_a" "mock_b_retry")
@@ -364,32 +363,42 @@ test_dag_exec_retry() {
     DAG_STAGE_RETRIES=(0 0)
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
-    
+
+    # Use a temp file for attempt count since mocks run in subshells
+    local attempt_file
+    attempt_file=$(mktemp)
+    echo 0 > "$attempt_file"
+
     mock_a() { return 0; }
-    mock_b_retry() { 
-        attempt_count=$((attempt_count + 1))
-        if (( attempt_count < 2 )); then
+    mock_b_retry() {
+        local count
+        count=$(cat "$attempt_file")
+        count=$((count + 1))
+        echo "$count" > "$attempt_file"
+        if (( count < 2 )); then
             return 1
         fi
-        return 0; 
+        return 0;
     }
     export -f mock_a mock_b_retry
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     STAGE_RETRIES=1
     export STAGE_RETRIES
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
-    assert_equals "RETRY attempts used" 2 "$attempt_count"
-    assert_equals "Stage B state after retry success" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "b")"
-    
-    rm -rf "$tmpdir"
+
+    local final_count
+    final_count=$(cat "$attempt_file")
+    assert_equals "RETRY attempts used" 2 "$final_count"
+    assert_equals "Stage b state after retry success" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "b")"
+
+    rm -rf "$tmpdir" "$attempt_file"
     unset -f mock_a mock_b_retry
     unset STAGE_RETRIES
 }
@@ -398,7 +407,7 @@ test_dag_exec_retry() {
 test_dag_exec_deterministic() {
     local exec_order_1=()
     local exec_order_2=()
-    
+
     # Run 1
     reset_dag_state
     DAG_STAGE_ID=("a" "b" "c" "d")
@@ -414,19 +423,19 @@ test_dag_exec_deterministic() {
     DAG_STAGE_RETRIES=(0 0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b() { return 0; }
     mock_c() { return 0; }
     mock_d() { return 0; }
     export -f mock_a mock_b mock_c mock_d
-    
+
     local tmpdir1
     tmpdir1=$(mktemp -d)
     dag_exec_init "$tmpdir1"
     dag_exec_execute "$tmpdir1"
     rm -rf "$tmpdir1"
-    
+
     # Run 2
     reset_dag_state
     DAG_STAGE_ID=("a" "b" "c" "d")
@@ -442,27 +451,27 @@ test_dag_exec_deterministic() {
     DAG_STAGE_RETRIES=(0 0 0 0)
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
-    
+
     local tmpdir2
     tmpdir2=$(mktemp -d)
     dag_exec_init "$tmpdir2"
     dag_exec_execute "$tmpdir2"
     rm -rf "$tmpdir2"
-    
+
     local order1_str
     order1_str=$(IFS=,; echo "${exec_order_1[*]}")
     local order2_str
     order2_str=$(IFS=,; echo "${exec_order_2[*]:-}")
-    
+
     assert_equals "Deterministic execution order" "$order1_str" "$order2_str"
-    
+
     unset -f mock_a mock_b mock_c mock_D
 }
 
 # Test: Cycle protection - executor rejects invalid DAG
 test_dag_exec_cycle_protection() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b")
     DAG_STAGE_LABEL=("a" "b")
     DAG_STAGE_DEPS=("b" "a")
@@ -476,20 +485,20 @@ test_dag_exec_cycle_protection() {
     DAG_STAGE_RETRIES=(0 0)
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b() { return 0; }
     export -f mock_a mock_b
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     if ! dag_exec_init "$tmpdir"; then
         assert_success "Cycle detection prevents execution"
     else
         assert_failure "Cycle detection should prevent execution"
     fi
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b
 }
@@ -497,7 +506,7 @@ test_dag_exec_cycle_protection() {
 # Test: Empty DAG handled safely
 test_dag_exec_empty_dag() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=()
     DAG_STAGE_LABEL=()
     DAG_STAGE_DEPS=()
@@ -511,24 +520,24 @@ test_dag_exec_empty_dag() {
     DAG_STAGE_RETRIES=()
     DAG_STAGE_RATE_LIMIT=()
     DAG_LOADED=1
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "Empty DAG succeeds" 0 "$result"
-    
+
     rm -rf "$tmpdir"
 }
 
 # Test: Single-stage DAG
 test_dag_exec_single_stage() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("A")
     DAG_STAGE_LABEL=("A")
     DAG_STAGE_DEPS=("")
@@ -542,29 +551,29 @@ test_dag_exec_single_stage() {
     DAG_STAGE_RETRIES=(0)
     DAG_STAGE_RATE_LIMIT=("")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     export -f mock_A
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "Single stage succeeds" 0 "$result"
-    assert_equals "Stage A state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
-    
+    assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
+
     rm -rf "$tmpdir"
-    unset -f mock_A
+    unset -f mock_a
 }
 
 # Test: Unknown stage rejection
 test_dag_exec_unknown_stage() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("A")
     DAG_STAGE_LABEL=("A")
     DAG_STAGE_DEPS=("unknown")
@@ -578,30 +587,30 @@ test_dag_exec_unknown_stage() {
     DAG_STAGE_RETRIES=(0)
     DAG_STAGE_RATE_LIMIT=("")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     export -f mock_A
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     if ! dag_exec_init "$tmpdir"; then
         assert_success "Unknown dependency rejected"
     else
         assert_failure "Unknown dependency should be rejected"
     fi
-    
+
     rm -rf "$tmpdir"
-    unset -f mock_A
+    unset -f mock_a
 }
 
 # Test: Condition evaluation skips stage
 test_dag_exec_condition_skip() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b")
     DAG_STAGE_LABEL=("a" "b")
-    DAG_STAGE_DEPS=("" "A")
+    DAG_STAGE_DEPS=("" "a")
     DAG_STAGE_INPUTS=("input" "input")
     DAG_STAGE_OUTPUTS=("output" "output")
     DAG_STAGE_CMD=("mock_a" "mock_b")
@@ -612,23 +621,23 @@ test_dag_exec_condition_skip() {
     DAG_STAGE_RETRIES=(0 0)
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 0; }
     mock_b() { return 0; }
     export -f mock_a mock_b
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "Condition skip succeeds" 0 "$result"
-    assert_equals "Stage A state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
+    assert_equals "Stage a state" "$DAG_STATE_SUCCESS" "$(dag_exec_get_state "a")"
     assert_equals "Stage B state (skipped)" "$DAG_STATE_SKIPPED" "$(dag_exec_get_state "b")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b
 }
@@ -636,10 +645,10 @@ test_dag_exec_condition_skip() {
 # Test: Invalid dependency state handling
 test_dag_exec_invalid_dep_state() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b")
     DAG_STAGE_LABEL=("a" "b")
-    DAG_STAGE_DEPS=("" "A")
+    DAG_STAGE_DEPS=("" "a")
     DAG_STAGE_INPUTS=("input" "input")
     DAG_STAGE_OUTPUTS=("output" "output")
     DAG_STAGE_CMD=("mock_a" "mock_b")
@@ -650,22 +659,22 @@ test_dag_exec_invalid_dep_state() {
     DAG_STAGE_RETRIES=(0 0)
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
-    
+
     mock_a() { return 1; }
     mock_b() { return 0; }
     export -f mock_a mock_b
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     local result
     dag_exec_execute "$tmpdir"
     result=$?
-    
+
     assert_equals "FAIL_FAST blocks dependent" 2 "$result"
     assert_equals "Stage B blocked" "$DAG_STATE_BLOCKED" "$(dag_exec_get_state "b")"
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b
 }
@@ -673,10 +682,10 @@ test_dag_exec_invalid_dep_state() {
 # Test: Manifest integration - stage states tracked in manifest
 test_dag_exec_manifest_integration() {
     reset_dag_state
-    
+
     DAG_STAGE_ID=("a" "b")
     DAG_STAGE_LABEL=("a" "b")
-    DAG_STAGE_DEPS=("" "A")
+    DAG_STAGE_DEPS=("" "a")
     DAG_STAGE_INPUTS=("input" "input")
     DAG_STAGE_OUTPUTS=("output" "output")
     DAG_STAGE_CMD=("mock_a" "mock_b")
@@ -687,20 +696,20 @@ test_dag_exec_manifest_integration() {
     DAG_STAGE_RETRIES=(0 0)
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
-    
+
     mock_a() { echo "result" > "${DAG_EXEC_WORKSPACE}/output"; return 0; }
     mock_b() { echo "result" > "${DAG_EXEC_WORKSPACE}/output"; return 0; }
     export -f mock_a mock_b
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
-    
+
     local manifest_file="${tmpdir}/manifest.json"
     assert_equals "Manifest exists" "true" "$([[ -f "$manifest_file" ]] && echo true || echo false)"
-    
+
     if command -v jq >/dev/null 2>&1; then
         local a_status
         a_status=$(jq -r '.stages.A.status' "$manifest_file")
@@ -709,7 +718,7 @@ test_dag_exec_manifest_integration() {
         assert_equals "Manifest stage A success" "success" "$a_status"
         assert_equals "Manifest stage B success" "success" "$b_status"
     fi
-    
+
     rm -rf "$tmpdir"
     unset -f mock_a mock_b
 }
@@ -717,12 +726,12 @@ test_dag_exec_manifest_integration() {
 # Test: Canonical 7-stage DAG executes in correct order
 test_dag_exec_canonical_order() {
     reset_dag_state
-    
+
     # Load canonical DAG
     dag_load_canonical
-    
+
     local exec_order=()
-    
+
     execute_subdomains_stage() { exec_order+=("subdomains"); return 0; }
     run_dnsx() { exec_order+=("dns"); return 0; }
     run_naabu() { exec_order+=("ports"); return 0; }
@@ -731,13 +740,13 @@ test_dag_exec_canonical_order() {
     run_nuclei() { exec_order+=("vuln"); return 0; }
     execute_reports_stage() { exec_order+=("reports"); return 0; }
     export -f execute_subdomains_stage run_dnsx run_naabu execute_live_stage run_katana run_nuclei execute_reports_stage
-    
+
     local tmpdir
     tmpdir=$(mktemp -d)
-    
+
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
-    
+
     assert_equals "Canonical order 1" "subdomains" "${exec_order[0]:-}"
     assert_equals "Canonical order 2" "dns" "${exec_order[1]:-}"
     assert_equals "Canonical order 3" "ports" "${exec_order[2]:-}"
@@ -745,7 +754,7 @@ test_dag_exec_canonical_order() {
     assert_equals "Canonical order 5" "crawling" "${exec_order[4]:-}"
     assert_equals "Canonical order 6" "vuln" "${exec_order[5]:-}"
     assert_equals "Canonical order 7" "reports" "${exec_order[6]:-}"
-    
+
     rm -rf "$tmpdir"
     unset -f execute_subdomains_stage run_dnsx run_naabu execute_live_stage run_katana run_nuclei execute_reports_stage
 }

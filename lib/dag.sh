@@ -499,8 +499,8 @@ dag_validate_commands() {
 dag_validate_all() {
     DAG_ERRORS=()
 
-    # Load canonical DAG if not already loaded
-    if [[ -z "${DAG_LOADED:-}" ]]; then
+    # Only load canonical if not already loaded with a custom DAG
+    if [[ -z "${DAG_LOADED:-}" || ${#DAG_STAGE_ID[@]} -eq 0 ]]; then
         dag_load_canonical || return 1
     fi
 
