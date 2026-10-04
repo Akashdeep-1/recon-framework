@@ -463,7 +463,7 @@ dag_exec_process_child_result() {
         # Failure - handle according to policy
         local failure_policy
         failure_policy=$(dag_get_stage_failure_policy "$stage_id")
-        dag_exec_handle_failure "$stage_id"
+        dag_exec_handle_failure "$stage_id" "$workspace"
         return "$child_status"
     fi
 }
@@ -830,6 +830,7 @@ dag_exec_run_stage() {
 # ============================================
 dag_exec_handle_failure() {
     local stage_id="$1"
+    local workspace="${2:-$DAG_EXEC_WORKSPACE}"
     local failure_policy
     failure_policy=$(dag_get_stage_failure_policy "$stage_id")
 
@@ -856,6 +857,11 @@ dag_exec_handle_failure() {
             log_error "Unknown failure policy: $failure_policy"
             ;;
     esac
+    
+    # Update manifest for failed stage
+    update_stage_manifest "$workspace" "$stage_id" "failed" 0 0 1
+    dag_exec_set_state "$stage_id" "$DAG_STATE_FAILED"
+    jsonl_stage_complete "$stage_id" "failed" 0 "0"
 }
 
 # ============================================
@@ -1016,7 +1022,7 @@ dag_exec_execute() {
             if [[ "$child_status" -eq 0 ]]; then
                 dag_exec_process_child_result "$completed_stage" "$child_status" "$workspace"
             else
-                dag_exec_handle_failure "$completed_stage"
+                dag_exec_handle_failure "$completed_stage" "$workspace"
                 execution_failed=1
                 local failure_policy
                 failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
