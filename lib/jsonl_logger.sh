@@ -215,6 +215,26 @@ jsonl_condition_evaluated() {
     jsonl_emit "condition_evaluated" "stage" "$stage" "condition" "$condition" "result" "$result"
 }
 
+# Phase 7.4: Parallel execution telemetry
+jsonl_stage_queued() {
+    local stage="$1"
+    local parallel_group="${2:-}"
+    local deps_satisfied="${3:-}"
+    jsonl_emit "stage_queued" "stage" "$stage" "parallel_group" "$parallel_group" "deps_satisfied" "$deps_satisfied"
+}
+
+jsonl_parallel_start() {
+    local concurrency="$1"
+    local run_id="${2:-$JSONL_RUN_ID}"
+    jsonl_emit "parallel_start" "max_concurrency" "$concurrency" "run_id" "$run_id"
+}
+
+jsonl_parallel_complete() {
+    local completed_stages="$1"
+    local run_id="${2:-$JSONL_RUN_ID}"
+    jsonl_emit "parallel_complete" "completed_stages" "$completed_stages" "run_id" "$run_id"
+}
+
 jsonl_tool_start() {
     local tool="$1"
     local stage="${2:-}"

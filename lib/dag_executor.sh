@@ -47,6 +47,12 @@ readonly DAG_STATE_SKIPPED="SKIPPED"
 DAG_EXEC_STAGE_STATES=()
 DAG_EXEC_WORKSPACE=""
 
+# Parallel execution state
+DAG_EXEC_MAX_CONCURRENCY=1
+DAG_EXEC_ACTIVE_PIDS=()
+DAG_EXEC_ACTIVE_STAGES=()
+DAG_EXEC_CHILD_RESULTS=()
+
 # ============================================
 # Initialize executor with validated DAG
 # ============================================
@@ -54,6 +60,24 @@ dag_exec_init() {
     local workspace="$1"
 
     DAG_EXEC_WORKSPACE="$workspace"
+
+    # Initialize parallel execution state
+    DAG_EXEC_ACTIVE_PIDS=()
+    DAG_EXEC_ACTIVE_STAGES=()
+    DAG_EXEC_CHILD_RESULTS=()
+
+    # Load concurrency config (default to 1 for backward compatibility)
+    if [[ -n "${DAG_MAX_CONCURRENCY:-}" ]]; then
+        DAG_EXEC_MAX_CONCURRENCY="$DAG_MAX_CONCURRENCY"
+    else
+        DAG_EXEC_MAX_CONCURRENCY=1
+    fi
+
+    # Validate concurrency value
+    if [[ ! "$DAG_EXEC_MAX_CONCURRENCY" =~ ^[0-9]+$ ]] || (( DAG_EXEC_MAX_CONCURRENCY < 1 )); then
+        log_error "Invalid DAG_MAX_CONCURRENCY: $DAG_EXEC_MAX_CONCURRENCY (must be positive integer)"
+        return 1
+    fi
 
     # Ensure workspace directory structure exists
     local directories=(
@@ -87,7 +111,7 @@ dag_exec_init() {
         DAG_EXEC_STAGE_STATES[i]="$DAG_STATE_PENDING"
     done
 
-    log_debug "DAG executor initialized with ${#DAG_STAGE_ID[@]} stages"
+    log_debug "DAG executor initialized with ${#DAG_STAGE_ID[@]} stages, max_concurrency=$DAG_EXEC_MAX_CONCURRENCY"
     return 0
 }
 
@@ -355,6 +379,290 @@ dag_exec_get_ready_stages_into() {
 }
 
 # ============================================
+# Wait for any running child to complete
+# ============================================
+dag_exec_wait_any_child() {
+    local child_pid
+    local child_status
+    local child_index
+
+    # Wait for any child to complete
+    if [[ ${#DAG_EXEC_ACTIVE_PIDS[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # Use wait -n and capture the PID using WAITPID (bash 5.1+)
+    wait -n
+    child_status=$?
+    child_pid="${WAITPID:-$!}"
+
+    # Find which child completed
+    for child_index in "${!DAG_EXEC_ACTIVE_PIDS[@]}"; do
+        if [[ "${DAG_EXEC_ACTIVE_PIDS[child_index]}" == "$child_pid" ]]; then
+            local completed_stage="${DAG_EXEC_ACTIVE_STAGES[child_index]}"
+            DAG_EXEC_CHILD_RESULTS["$completed_stage"]=$child_status
+            log_debug "Child $child_pid (stage $completed_stage) completed with status $child_status"
+
+            # Remove from active arrays
+            unset 'DAG_EXEC_ACTIVE_PIDS[child_index]'
+            unset 'DAG_EXEC_ACTIVE_STAGES[child_index]'
+            # Re-index arrays
+            DAG_EXEC_ACTIVE_PIDS=("${DAG_EXEC_ACTIVE_PIDS[@]}")
+            DAG_EXEC_ACTIVE_STAGES=("${DAG_EXEC_ACTIVE_STAGES[@]}")
+            break
+        fi
+    done
+
+    return 0
+}
+
+# ============================================
+# Wait for all running children to complete
+# ============================================
+dag_exec_wait_all_children() {
+    while [[ ${#DAG_EXEC_ACTIVE_PIDS[@]} -gt 0 ]]; do
+        dag_exec_wait_any_child || break
+    done
+}
+
+# ============================================
+# Handle child completion and process failure policies
+# ============================================
+dag_exec_process_child_result() {
+    local stage_id="$1"
+    local child_status="$2"
+    local workspace="$3"
+
+    if [[ "$child_status" -eq 0 ]]; then
+        # Success - state already set to RUNNING, now set to SUCCESS
+        # We need to update manifest and state
+        local stage_label
+        stage_label=$(dag_get_stage_label "$stage_id")
+        local check_file
+        local outputs
+        outputs=$(dag_get_stage_outputs "$stage_id")
+        check_file="${workspace}/$(echo "$outputs" | cut -d' ' -f1)"
+        local output_count=0
+        if [[ -f "$check_file" ]]; then
+            output_count="$(count_result_lines "$check_file" 2>/dev/null || echo 0)"
+        fi
+        # Duration calculation would need start time - simplified for now
+        update_stage_manifest "$workspace" "$stage_id" "success" 0 "$output_count" 1
+        dag_exec_set_state "$stage_id" "$DAG_STATE_SUCCESS"
+        log_success "Stage '$stage_label' completed successfully"
+        jsonl_stage_complete "$stage_id" "success" 0 "$output_count"
+        return 0
+    else
+        # Failure - handle according to policy
+        local failure_policy
+        failure_policy=$(dag_get_stage_failure_policy "$stage_id")
+        dag_exec_handle_failure "$stage_id"
+        return "$child_status"
+    fi
+}
+
+# ============================================
+# Execute a single stage in background
+# ============================================
+dag_exec_run_stage_background() {
+    local stage_id="$1"
+    local workspace="$2"
+
+    dag_exec_set_state "$stage_id" "$DAG_STATE_RUNNING"
+
+    # Get stage metadata
+    local stage_label
+    stage_label=$(dag_get_stage_label "$stage_id")
+    local stage_cmd
+    stage_cmd=$(dag_get_stage_cmd "$stage_id")
+
+    log_info "Executing stage: $stage_label ($stage_id)"
+
+    # Update manifest to running
+    update_stage_manifest "$workspace" "$stage_id" "running" 0 0 1
+
+    # Emit stage_start event
+    jsonl_stage_start "$stage_id" "${DOMAIN:-example.com}"
+
+    # Get failure policy for retry logic
+    local failure_policy
+    failure_policy=$(dag_get_stage_failure_policy "$stage_id")
+    local max_attempts=1
+    if [[ "$failure_policy" == "RETRY" ]]; then
+        max_attempts=$(( STAGE_RETRIES + 1 ))
+    fi
+
+    local domain="${DOMAIN:-example.com}"
+
+    # Run in background - pass stage_id and stage_cmd via environment
+    (
+        export DAG_EXEC_STAGE_ID="$stage_id"
+        export DAG_EXEC_STAGE_CMD="$stage_cmd"
+        export DAG_EXEC_STAGE_LABEL="$stage_label"
+        export DAG_EXEC_WORKSPACE="$workspace"
+        export DAG_EXEC_DOMAIN="$domain"
+        export DAG_EXEC_STAGE_TIMEOUT="${STAGE_TIMEOUT:-0}"
+        export DAG_EXEC_MAX_ATTEMPTS="$max_attempts"
+
+        local attempt=1
+        local stage_status=0
+        local stage_start_epoch
+        stage_start_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+
+        while (( attempt <= max_attempts )); do
+            if (( attempt > 1 )); then
+                log_warn "Retrying ${stage_label} (attempt ${attempt}/${max_attempts})..."
+                update_stage_manifest "$workspace" "$stage_id" "running" 0 0 "$attempt"
+            fi
+
+            stage_status=0
+            # Build command arguments based on stage
+            case "$DAG_EXEC_STAGE_ID" in
+                subdomains)
+                    local subdomain_dir="${workspace}/subdomains"
+                    local subfinder_output="${subdomain_dir}/subfinder.txt"
+                    local assetfinder_output="${subdomain_dir}/assetfinder.txt"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$subdomain_dir" "$subfinder_output" "$assetfinder_output" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$subdomain_dir" "$subfinder_output" "$assetfinder_output" || stage_status=$?
+                    fi
+                    ;;
+                dns)
+                    local merged_subdomains="${workspace}/subdomains/all.txt"
+                    local dns_output="${workspace}/dns/resolved.txt"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$merged_subdomains" "$dns_output" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$merged_subdomains" "$dns_output" || stage_status=$?
+                    fi
+                    ;;
+                ports)
+                    local dns_output="${workspace}/dns/resolved.txt"
+                    local ports_output="${workspace}/ports/naabu.txt"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$dns_output" "$ports_output" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$dns_output" "$ports_output" || stage_status=$?
+                    fi
+                    ;;
+                live)
+                    local dns_output="${workspace}/dns/resolved.txt"
+                    local web_candidates="${workspace}/ports/web_candidates.txt"
+                    local http_targets="${workspace}/live/targets.txt"
+                    local live_output="${workspace}/live/httpx.txt"
+                    local clean_urls="${workspace}/live/urls.txt"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$dns_output" "$web_candidates" "$http_targets" "$live_output" "$clean_urls" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$dns_output" "$web_candidates" "$http_targets" "$live_output" "$clean_urls" || stage_status=$?
+                    fi
+                    ;;
+                crawling)
+                    local clean_urls="${workspace}/live/urls.txt"
+                    local katana_output="${workspace}/urls/katana.txt"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$clean_urls" "$katana_output" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$clean_urls" "$katana_output" || stage_status=$?
+                    fi
+                    ;;
+                vuln)
+                    local katana_output="${workspace}/urls/katana.txt"
+                    local clean_urls="${workspace}/live/urls.txt"
+                    local nuclei_output="${workspace}/nuclei/findings.jsonl"
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$domain" "$katana_output" "$clean_urls" "$nuclei_output" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$domain" "$katana_output" "$clean_urls" "$nuclei_output" || stage_status=$?
+                    fi
+                    ;;
+                reports)
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" "$workspace" "$domain" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" "$workspace" "$domain" || stage_status=$?
+                    fi
+                    ;;
+                *)
+                    if [[ "${DAG_EXEC_STAGE_TIMEOUT:-0}" -gt 0 ]]; then
+                        run_with_timeout "$DAG_EXEC_STAGE_TIMEOUT" "$DAG_EXEC_STAGE_CMD" || stage_status=$?
+                    else
+                        "$DAG_EXEC_STAGE_CMD" || stage_status=$?
+                    fi
+                    ;;
+            esac
+
+            if [[ "$stage_status" -eq 0 ]]; then
+                break
+            fi
+
+            attempt=$(( attempt + 1 ))
+        done
+
+        local stage_end_epoch
+        stage_end_epoch="$(date +%s%3N 2>/dev/null || date +%s)"
+        local duration=$(( stage_end_epoch - stage_start_epoch ))
+
+        if [[ "$stage_status" -eq 0 ]]; then
+            local output_count=0
+            local check_file
+            local outputs
+            outputs=$(dag_get_stage_outputs "$DAG_EXEC_STAGE_ID")
+            check_file="${workspace}/$(echo "$outputs" | cut -d' ' -f1)"
+            if [[ -f "$check_file" ]]; then
+                output_count="$(count_result_lines "$check_file" 2>/dev/null || echo 0)"
+            fi
+            update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "success" "$duration" "$output_count" "$attempt"
+            echo "SUCCESS:$DAG_EXEC_STAGE_ID:$duration:$output_count"
+            exit 0
+        else
+            update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "failed" "$duration" 0 "$attempt"
+            echo "FAILED:$DAG_EXEC_STAGE_ID:$stage_status"
+            exit "$stage_status"
+        fi
+    ) &
+    local child_pid=$!
+
+    # Track the child
+    DAG_EXEC_ACTIVE_PIDS+=("$child_pid")
+    DAG_EXEC_ACTIVE_STAGES+=("$stage_id")
+
+    log_debug "Started stage '$stage_id' in background (PID: $child_pid)"
+    jsonl_stage_start "$stage_id" "${DOMAIN:-example.com}"
+}
+
+# ============================================
+# Launch ready stages up to concurrency limit
+# ============================================
+dag_exec_launch_ready_stages() {
+    local workspace="$1"
+    local ready_stages=()
+
+    dag_exec_get_ready_stages_into ready_stages
+
+    local launched=0
+    local stage_id
+    for stage_id in "${ready_stages[@]}"; do
+        # Check concurrency limit
+        if [[ ${#DAG_EXEC_ACTIVE_PIDS[@]} -ge $DAG_EXEC_MAX_CONCURRENCY ]]; then
+            break
+        fi
+
+        local parallel_group
+        parallel_group=$(dag_get_stage_parallel_group "$stage_id")
+        local deps
+        deps=$(dag_get_stage_deps "$stage_id")
+        jsonl_stage_queued "$stage_id" "$parallel_group" "$deps"
+
+        dag_exec_run_stage_background "$stage_id" "$workspace"
+        launched=$(( launched + 1 ))
+    done
+
+    return $launched
+}
+
+# ============================================
 # Execute a single stage using existing pipeline functions
 # ============================================
 dag_exec_run_stage() {
@@ -617,7 +925,24 @@ dag_exec_has_critical_failure() {
 }
 
 # ============================================
-# Main DAG execution loop
+# Cleanup child processes on exit
+# ============================================
+dag_exec_cleanup_children() {
+    local pid
+    for pid in "${DAG_EXEC_ACTIVE_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            log_warn "Cleaning up child process $pid"
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    # Wait for all to avoid zombies
+    for pid in "${DAG_EXEC_ACTIVE_PIDS[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+}
+
+# ============================================
+# Main DAG execution loop (parallel-aware)
 # ============================================
 dag_exec_execute() {
     local workspace="$1"
@@ -629,6 +954,12 @@ dag_exec_execute() {
     local execution_failed=0
     local fail_fast_triggered=0
 
+    # Set up signal handlers to clean up child processes
+    trap 'dag_exec_cleanup_children' INT TERM EXIT
+
+    # Emit parallel_start event
+    jsonl_parallel_start "$DAG_EXEC_MAX_CONCURRENCY"
+
     # Main execution loop
     while ! dag_exec_is_complete; do
         # Check for critical failure
@@ -638,12 +969,11 @@ dag_exec_execute() {
             break
         fi
 
-        # Get ready stages (use function directly, not subshell)
-        local ready_stages=()
-        dag_exec_get_ready_stages_into ready_stages
+        # Launch ready stages up to concurrency limit
+        dag_exec_launch_ready_stages "$workspace"
 
-        if (( ${#ready_stages[@]} == 0 )); then
-            # No ready stages but not complete - check if there are pending stages blocked
+        # If no active children and no ready stages, check for deadlock
+        if [[ ${#DAG_EXEC_ACTIVE_PIDS[@]} -eq 0 ]]; then
             local has_pending=0
             local i
             for (( i=0; i<${#DAG_STAGE_ID[@]}; i++ )); do
@@ -664,27 +994,56 @@ dag_exec_execute() {
             break
         fi
 
-        # Execute ready stages sequentially (deterministic order from topological sort)
-        local stage_id
-        for stage_id in "${ready_stages[@]}"; do
-            if ! dag_exec_run_stage "$stage_id" "$workspace"; then
-                # Stage failed - handle according to policy
-                local failure_policy
-                failure_policy=$(dag_get_stage_failure_policy "$stage_id")
-                dag_exec_handle_failure "$stage_id"
+        # Wait for at least one child to complete
+        if ! dag_exec_wait_any_child; then
+            log_error "Failed to wait for child processes"
+            execution_failed=1
+            break
+        fi
+
+        # Process the completed child
+        local completed_stage
+        local child_status
+        for completed_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
+            child_status="${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
+            if [[ "$child_status" -eq 0 ]]; then
+                dag_exec_process_child_result "$completed_stage" "$child_status" "$workspace"
+            else
+                dag_exec_handle_failure "$completed_stage"
                 execution_failed=1
-                # Check if FAIL_FAST
+                local failure_policy
+                failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
                 if [[ "$failure_policy" == "FAIL_FAST" ]]; then
                     fail_fast_triggered=1
-                    break
                 fi
             fi
+            # Clean up the result
+            unset 'DAG_EXEC_CHILD_RESULTS[$completed_stage]'
         done
 
         if (( fail_fast_triggered )); then
+            # Wait for any remaining children before aborting
+            dag_exec_wait_all_children
             break
         fi
     done
+
+    # Ensure all children are waited on
+    dag_exec_wait_all_children
+
+    # Emit parallel_complete event
+    local completed_stages=""
+    local i
+    for (( i=0; i<${#DAG_STAGE_ID[@]}; i++ )); do
+        local state="${DAG_EXEC_STAGE_STATES[i]}"
+        if [[ "$state" == "$DAG_STATE_SUCCESS" || "$state" == "$DAG_STATE_FAILED" || "$state" == "$DAG_STATE_SKIPPED" || "$state" == "$DAG_STATE_BLOCKED" ]]; then
+            if [[ -n "$completed_stages" ]]; then
+                completed_stages="${completed_stages},"
+            fi
+            completed_stages="${completed_stages}${DAG_STAGE_ID[i]}"
+        fi
+    done
+    jsonl_parallel_complete "$completed_stages"
 
     # Determine overall result
     if (( fail_fast_triggered )); then
