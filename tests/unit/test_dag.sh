@@ -271,10 +271,8 @@ test_dag_condition_evaluation() {
     # Test true condition
     dag_evaluate_condition "true" "$tmpdir" && assert_success "true condition evaluates to true" || assert_failure "true condition failed"
     
-    # Test has_subdomains without file (but stage selected)
-    export CLI_STAGES="subdomains"
-    dag_evaluate_condition "has_subdomains" "$tmpdir" && assert_success "has_subdomains true when stage selected" || assert_failure "has_subdomains failed when stage selected"
-    unset CLI_STAGES
+    # Test has_subdomains without file - should fail (no output)
+    dag_evaluate_condition "has_subdomains" "$tmpdir" && assert_failure "has_subdomains should fail without file" || assert_success "has_subdomains correctly fails without file"
     
     # Test has_subdomains with file
     mkdir -p "$tmpdir/subdomains"

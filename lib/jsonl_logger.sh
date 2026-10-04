@@ -188,6 +188,33 @@ jsonl_stage_complete() {
     jsonl_emit "stage_complete" "stage" "$stage" "status" "$status" "duration_ms" "$duration_ms" "assets_count" "$assets_count"
 }
 
+# Phase 7.3: Conditional execution telemetry
+jsonl_stage_skipped() {
+    local stage="$1"
+    local reason="${2:-condition_false}"
+    local condition="${3:-}"
+    jsonl_emit "stage_skipped" "stage" "$stage" "reason" "$reason" "condition" "$condition"
+}
+
+jsonl_stage_blocked() {
+    local stage="$1"
+    local blocked_by="${2:-}"
+    jsonl_emit "stage_blocked" "stage" "$stage" "blocked_by" "$blocked_by"
+}
+
+jsonl_stage_ready() {
+    local stage="$1"
+    local condition="${2:-}"
+    jsonl_emit "stage_ready" "stage" "$stage" "condition" "$condition"
+}
+
+jsonl_condition_evaluated() {
+    local stage="$1"
+    local condition="${2:-}"
+    local result="${3:-false}"
+    jsonl_emit "condition_evaluated" "stage" "$stage" "condition" "$condition" "result" "$result"
+}
+
 jsonl_tool_start() {
     local tool="$1"
     local stage="${2:-}"

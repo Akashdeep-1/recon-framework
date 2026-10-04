@@ -114,7 +114,7 @@ dag_exec_set_state() {
 }
 
 # ============================================
-# Check if all dependencies of a stage are satisfied
+# Check if all dependencies of a stage are satisfied (SUCCESS or SKIPPED)
 # ============================================
 dag_exec_deps_satisfied() {
     local stage_id="$1"
@@ -132,7 +132,8 @@ dag_exec_deps_satisfied() {
         dep="${dep// /}"
         local dep_state
         dep_state=$(dag_exec_get_state "$dep")
-        if [[ "$dep_state" != "$DAG_STATE_SUCCESS" ]]; then
+        # Dependencies must be SUCCESS or SKIPPED (not PENDING, RUNNING, FAILED, BLOCKED)
+        if [[ "$dep_state" != "$DAG_STATE_SUCCESS" && "$dep_state" != "$DAG_STATE_SKIPPED" ]]; then
             return 1
         fi
     done
@@ -160,6 +161,33 @@ dag_exec_has_failed_deps() {
         local dep_state
         dep_state=$(dag_exec_get_state "$dep")
         if [[ "$dep_state" == "$DAG_STATE_FAILED" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# ============================================
+# Check if a stage has any skipped dependencies (to propagate SKIPPED)
+# ============================================
+dag_exec_has_skipped_deps() {
+    local stage_id="$1"
+    local deps
+    deps=$(dag_get_stage_deps "$stage_id") || return 1
+
+    if [[ -z "$deps" ]]; then
+        return 1
+    fi
+
+    local IFS=','
+    read -r -a dep_array <<< "$deps"
+    local dep
+    for dep in "${dep_array[@]}"; do
+        dep="${dep// /}"
+        local dep_state
+        dep_state=$(dag_exec_get_state "$dep")
+        if [[ "$dep_state" == "$DAG_STATE_SKIPPED" ]]; then
             return 0
         fi
     done
@@ -214,6 +242,15 @@ dag_exec_get_ready_stages() {
         if dag_exec_has_failed_deps "$stage_id"; then
             dag_exec_set_state "$stage_id" "$DAG_STATE_BLOCKED"
             log_info "Stage '$stage_id' blocked due to failed dependency"
+            jsonl_stage_blocked "$stage_id" "dependency_failed"
+            continue
+        fi
+
+        # Check if any dependency was skipped - if so, skip this stage too
+        if dag_exec_has_skipped_deps "$stage_id"; then
+            dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
+            log_info "Stage '$stage_id' skipped (dependency was skipped)"
+            jsonl_stage_skipped "$stage_id" "dependency_skipped" ""
             continue
         fi
 
@@ -223,17 +260,25 @@ dag_exec_get_ready_stages() {
             local condition
             condition=$(dag_get_stage_condition "$stage_id")
             if [[ -n "$condition" ]]; then
-                if ! dag_evaluate_condition "$condition" "$DAG_EXEC_WORKSPACE"; then
+                local condition_result=0
+                dag_evaluate_condition "$condition" "$DAG_EXEC_WORKSPACE"
+                condition_result=$?
+                jsonl_condition_evaluated "$stage_id" "$condition" "$condition_result"
+
+                if [[ "$condition_result" -ne 0 ]]; then
                     dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
                     log_info "Stage '$stage_id' skipped (condition '$condition' evaluated false)"
+                    jsonl_stage_skipped "$stage_id" "condition_false" "$condition"
                     continue
                 fi
+                jsonl_stage_ready "$stage_id" "$condition"
             fi
 
             # Check if stage is selected via CLI
             if ! is_stage_selected "$stage_id"; then
                 dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
                 log_info "Stage '$stage_id' skipped (not in CLI_STAGES)"
+                jsonl_stage_skipped "$stage_id" "cli_excluded" ""
                 continue
             fi
 
@@ -264,6 +309,15 @@ dag_exec_get_ready_stages_into() {
         if dag_exec_has_failed_deps "$stage_id"; then
             dag_exec_set_state "$stage_id" "$DAG_STATE_BLOCKED"
             log_info "Stage '$stage_id' blocked due to failed dependency"
+            jsonl_stage_blocked "$stage_id" "dependency_failed"
+            continue
+        fi
+
+        # Check if any dependency was skipped - if so, skip this stage too
+        if dag_exec_has_skipped_deps "$stage_id"; then
+            dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
+            log_info "Stage '$stage_id' skipped (dependency was skipped)"
+            jsonl_stage_skipped "$stage_id" "dependency_skipped" ""
             continue
         fi
 
@@ -273,17 +327,25 @@ dag_exec_get_ready_stages_into() {
             local condition
             condition=$(dag_get_stage_condition "$stage_id")
             if [[ -n "$condition" ]]; then
-                if ! dag_evaluate_condition "$condition" "$DAG_EXEC_WORKSPACE"; then
+                local condition_result=0
+                dag_evaluate_condition "$condition" "$DAG_EXEC_WORKSPACE"
+                condition_result=$?
+                jsonl_condition_evaluated "$stage_id" "$condition" "$condition_result"
+
+                if [[ "$condition_result" -ne 0 ]]; then
                     dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
                     log_info "Stage '$stage_id' skipped (condition '$condition' evaluated false)"
+                    jsonl_stage_skipped "$stage_id" "condition_false" "$condition"
                     continue
                 fi
+                jsonl_stage_ready "$stage_id" "$condition"
             fi
 
             # Check if stage is selected via CLI
             if ! is_stage_selected "$stage_id"; then
                 dag_exec_set_state "$stage_id" "$DAG_STATE_SKIPPED"
                 log_info "Stage '$stage_id' skipped (not in CLI_STAGES)"
+                jsonl_stage_skipped "$stage_id" "cli_excluded" ""
                 continue
             fi
 
@@ -437,11 +499,13 @@ dag_exec_run_stage() {
         update_stage_manifest "$workspace" "$stage_id" "success" "$duration" "$output_count" "$attempt"
         dag_exec_set_state "$stage_id" "$DAG_STATE_SUCCESS"
         log_success "Stage '$stage_label' completed successfully"
+        jsonl_stage_complete "$stage_id" "success" "$duration" "$output_count"
         return 0
     else
         update_stage_manifest "$workspace" "$stage_id" "failed" "$duration" 0 "$attempt"
         dag_exec_set_state "$stage_id" "$DAG_STATE_FAILED"
         log_error "Stage '$stage_label' failed with status $stage_status"
+        jsonl_stage_complete "$stage_id" "failed" "$duration" "0"
         return "$stage_status"
     fi
 }
@@ -458,14 +522,16 @@ dag_exec_handle_failure() {
         FAIL_FAST)
             log_error "FAIL_FAST: DAG execution aborted due to failure in '$stage_id'"
             # Mark all pending dependents as BLOCKED
-            dag_exec_block_dependents "$stage_id"
+            dag_exec_block_dependents_with_telemetry "$stage_id"
             ;;
         CONTINUE)
             log_warn "CONTINUE: Stage '$stage_id' failed, continuing with independent stages"
+            # Block dependents but don't abort
+            dag_exec_block_dependents_with_telemetry "$stage_id"
             ;;
         SKIP_DEPENDENTS)
             log_warn "SKIP_DEPENDENTS: Stage '$stage_id' failed, blocking dependents"
-            dag_exec_block_dependents "$stage_id"
+            dag_exec_block_dependents_with_telemetry "$stage_id"
             ;;
         RETRY)
             # Retry is handled by run_pipeline_stage internally
@@ -478,9 +544,9 @@ dag_exec_handle_failure() {
 }
 
 # ============================================
-# Block all dependents of a failed stage
+# Block all dependents of a failed stage (with telemetry)
 # ============================================
-dag_exec_block_dependents() {
+dag_exec_block_dependents_with_telemetry() {
     local failed_stage="$1"
     local i
     for (( i=0; i<${#DAG_STAGE_ID[@]}; i++ )); do
@@ -499,6 +565,7 @@ dag_exec_block_dependents() {
                     if [[ "$dep" == "$failed_stage" ]]; then
                         dag_exec_set_state "$stage_id" "$DAG_STATE_BLOCKED"
                         log_info "Stage '$stage_id' blocked (depends on failed stage '$failed_stage')"
+                        jsonl_stage_blocked "$stage_id" "$failed_stage"
                         break
                     fi
                 done
@@ -517,7 +584,7 @@ dag_exec_is_complete() {
 
     for (( i=0; i<${#DAG_STAGE_ID[@]}; i++ )); do
         local state="${DAG_EXEC_STAGE_STATES[i]}"
-        if [[ "$state" == "$DAG_STATE_PENDING" || "$state" == "$DAG_STATE_READY" ]]; then
+        if [[ "$state" == "$DAG_STATE_PENDING" ]]; then
             has_pending=1
         elif [[ "$state" == "$DAG_STATE_RUNNING" ]]; then
             has_running=1

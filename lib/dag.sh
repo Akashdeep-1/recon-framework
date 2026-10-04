@@ -622,13 +622,13 @@ dag_get_stage_rate_limit() {
 # has_subdomains - check if subdomains stage has output
 dag_condition_has_subdomains() {
     local workspace="$1"
-    [[ -s "${workspace}/subdomains/all.txt" ]] || is_stage_selected "subdomains"
+    [[ -s "${workspace}/subdomains/all.txt" ]]
 }
 
 # has_resolved_hosts
 dag_condition_has_resolved_hosts() {
     local workspace="$1"
-    [[ -s "${workspace}/dns/resolved.txt" ]] || is_stage_selected "dns"
+    [[ -s "${workspace}/dns/resolved.txt" ]]
 }
 
 # has_web_targets
