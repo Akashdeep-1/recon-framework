@@ -391,7 +391,7 @@ dag_exec_wait_any_child() {
         return 1
     fi
 
-    # Use wait -n and capture the PID using WAITPID (bash 5.1+)
+    # Use wait -n and capture the PID
     wait -n
     child_status=$?
     child_pid="${WAITPID:-$!}"
@@ -399,7 +399,11 @@ dag_exec_wait_any_child() {
     # Find which child completed
     for child_index in "${!DAG_EXEC_ACTIVE_PIDS[@]}"; do
         if [[ "${DAG_EXEC_ACTIVE_PIDS[child_index]}" == "$child_pid" ]]; then
-            local completed_stage="${DAG_EXEC_ACTIVE_STAGES[child_index]}"
+            local completed_stage="${DAG_EXEC_ACTIVE_STAGES[child_index]:-}"
+            if [[ -z "$completed_stage" ]]; then
+                log_error "No stage found for child PID $child_pid at index $child_index"
+                return 1
+            fi
             DAG_EXEC_CHILD_RESULTS["$completed_stage"]=$child_status
             log_debug "Child $child_pid (stage $completed_stage) completed with status $child_status"
 
