@@ -54,6 +54,52 @@ DAG_EXEC_ACTIVE_STAGES=()
 declare -A DAG_EXEC_CHILD_RESULTS
 
 # ============================================
+# Initialize manifest for DAG execution
+# ============================================
+dag_exec_init_manifest() {
+    local workspace="$1"
+    local manifest_file="${workspace}/manifest.json"
+    local start_time
+    start_time="$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date)"
+
+    local -a stages_to_write=()
+    if [[ ${#DAG_STAGE_ID[@]} -gt 0 ]]; then
+        stages_to_write=("${DAG_STAGE_ID[@]}")
+    else
+        stages_to_write=("${MANIFEST_CANONICAL_STAGES[@]}")
+    fi
+
+    local temp_manifest
+    temp_manifest="$(mktemp "${manifest_file}.tmp.XXXXXX" 2>/dev/null || printf '%s.tmp.%s' "$manifest_file" "$$")"
+
+    {
+        printf '{\n'
+        printf '  "target": "%s",\n' "${DOMAIN:-example.com}"
+        printf '  "start_time": "%s",\n' "$start_time"
+        printf '  "end_time": null,\n'
+        printf '  "status": "running",\n'
+        printf '  "dag_version": 1,\n'
+        printf '  "stages": {\n'
+        local i=0
+        local total=${#stages_to_write[@]}
+        local s
+        for s in "${stages_to_write[@]}"; do
+            i=$(( i + 1 ))
+            printf '    "%s": { "status": "pending", "duration_seconds": 0, "output_count": 0, "attempts": 0 }' "$s"
+            if (( i < total )); then
+                printf ',\n'
+            else
+                printf '\n'
+            fi
+        done
+        printf '  }\n'
+        printf '}\n'
+    } > "$temp_manifest"
+
+    atomic_swap_manifest "$temp_manifest" "$manifest_file"
+}
+
+# ============================================
 # Initialize executor with validated DAG
 # ============================================
 dag_exec_init() {
@@ -95,7 +141,7 @@ dag_exec_init() {
     done
 
     # Load canonical DAG only if not already loaded (test DAGs set their own)
-    if [[ -z "${DAG_LOADED:-}" || ${#DAG_STAGE_ID[@]} -eq 0 ]]; then
+    if [[ "${DAG_LOADED:-0}" -ne 1 ]]; then
         dag_load_canonical
     fi
 
@@ -103,6 +149,11 @@ dag_exec_init() {
     if ! dag_validate_all; then
         log_error "DAG validation failed before execution"
         return 1
+    fi
+
+    # Initialize manifest if not present
+    if [[ ! -f "$workspace/manifest.json" ]]; then
+        dag_exec_init_manifest "$workspace"
     fi
 
     # Initialize all stages to PENDING
@@ -636,7 +687,6 @@ dag_exec_run_stage_background() {
     DAG_EXEC_ACTIVE_STAGES+=("$stage_id")
 
     log_debug "Started stage '$stage_id' in background (PID: $child_pid)"
-    jsonl_stage_start "$stage_id" "${DOMAIN:-example.com}"
 }
 
 # ============================================
@@ -1015,24 +1065,24 @@ dag_exec_execute() {
         fi
 
         # Process the completed child
-        local completed_stage
-        local child_status
-        for completed_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
-            child_status="${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
-            if [[ "$child_status" -eq 0 ]]; then
-                dag_exec_process_child_result "$completed_stage" "$child_status" "$workspace"
-            else
-                dag_exec_handle_failure "$completed_stage" "$workspace"
-                execution_failed=1
-                local failure_policy
-                failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
-                if [[ "$failure_policy" == "FAIL_FAST" ]]; then
-                    fail_fast_triggered=1
-                fi
-            fi
-            # Clean up the result
-            unset 'DAG_EXEC_CHILD_RESULTS[$completed_stage]'
-        done
+                local completed_stage
+                local child_status
+                for completed_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
+                    child_status="${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
+                    if [[ "$child_status" -eq 0 ]]; then
+                        dag_exec_process_child_result "$completed_stage" "$child_status" "$workspace"
+                    else
+                        dag_exec_handle_failure "$completed_stage" "$workspace"
+                        execution_failed=1
+                        local failure_policy
+                        failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
+                        if [[ "$failure_policy" == "FAIL_FAST" ]]; then
+                            fail_fast_triggered=1
+                        fi
+                    fi
+                    # Clean up the result
+                    unset 'DAG_EXEC_CHILD_RESULTS[$completed_stage]'
+                done
 
         if (( fail_fast_triggered )); then
             # Wait for any remaining children before aborting
@@ -1041,8 +1091,20 @@ dag_exec_execute() {
         fi
     done
 
-    # Ensure all children are waited on
+    # Ensure all children are waited on and results processed
     dag_exec_wait_all_children
+    local remaining_stage
+    local remaining_status
+    for remaining_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
+        remaining_status="${DAG_EXEC_CHILD_RESULTS[$remaining_stage]}"
+        if [[ "$remaining_status" -eq 0 ]]; then
+            dag_exec_process_child_result "$remaining_stage" "$remaining_status" "$workspace"
+        else
+            dag_exec_handle_failure "$remaining_stage" "$workspace"
+            execution_failed=1
+        fi
+        unset 'DAG_EXEC_CHILD_RESULTS[$remaining_stage]'
+    done
 
     # Emit parallel_complete event
     local completed_stages=""
