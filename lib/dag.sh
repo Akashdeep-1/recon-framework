@@ -66,7 +66,7 @@ dag_validate_stage_id() {
         log_error "Stage ID cannot be empty"
         return 1
     fi
-    if [[ "$id" =~ [^a-z0-9_-] ]]; then
+    if [[ "$id" =~ [^a-zA-Z0-9_-] ]]; then
         log_error "Stage ID contains invalid characters: $id"
         return 1
     fi
@@ -500,7 +500,7 @@ dag_validate_all() {
     DAG_ERRORS=()
 
     # Only load canonical if not already loaded with a custom DAG
-    if [[ -z "${DAG_LOADED:-}" || ${#DAG_STAGE_ID[@]} -eq 0 ]]; then
+    if [[ "${DAG_LOADED:-0}" -ne 1 ]]; then
         dag_load_canonical || return 1
     fi
 
@@ -542,77 +542,77 @@ dag_get_stage_index() {
 dag_get_stage_deps() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_DEPS[index]}"
+    echo "${DAG_STAGE_DEPS[index]:-}"
 }
 
 # Get stage condition
 dag_get_stage_condition() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_CONDITION[index]}"
+    echo "${DAG_STAGE_CONDITION[index]:-}"
 }
 
 # Get stage failure policy
 dag_get_stage_failure_policy() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_FAILURE_POLICY[index]}"
+    echo "${DAG_STAGE_FAILURE_POLICY[index]:-}"
 }
 
 # Get stage parallel group
 dag_get_stage_parallel_group() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_PARALLEL_GROUP[index]}"
+    echo "${DAG_STAGE_PARALLEL_GROUP[index]:-}"
 }
 
 # Get stage command
 dag_get_stage_cmd() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_CMD[index]}"
+    echo "${DAG_STAGE_CMD[index]:-}"
 }
 
 # Get stage label
 dag_get_stage_label() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_LABEL[index]}"
+    echo "${DAG_STAGE_LABEL[index]:-}"
 }
 
 # Get stage inputs
 dag_get_stage_inputs() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_INPUTS[index]}"
+    echo "${DAG_STAGE_INPUTS[index]:-}"
 }
 
 # Get stage outputs
 dag_get_stage_outputs() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_OUTPUTS[index]}"
+    echo "${DAG_STAGE_OUTPUTS[index]:-}"
 }
 
 # Get stage timeout
 dag_get_stage_timeout() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_TIMEOUT[index]}"
+    echo "${DAG_STAGE_TIMEOUT[index]:-}"
 }
 
 # Get stage retries
 dag_get_stage_retries() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_RETRIES[index]}"
+    echo "${DAG_STAGE_RETRIES[index]:-}"
 }
 
 # Get stage rate limit
 dag_get_stage_rate_limit() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_RATE_LIMIT[index]}"
+    echo "${DAG_STAGE_RATE_LIMIT[index]:-}"
 }
 
 # ============================================

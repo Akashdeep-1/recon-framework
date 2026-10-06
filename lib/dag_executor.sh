@@ -569,7 +569,7 @@ dag_exec_run_stage_background() {
 
         while (( attempt <= max_attempts )); do
             if (( attempt > 1 )); then
-                log_warn "Retrying ${stage_label} (attempt ${attempt}/${max_attempts})..."
+                # Child doesn't log retries - parent handles that
                 update_stage_manifest "$workspace" "$stage_id" "running" 0 0 "$attempt"
             fi
 
@@ -672,11 +672,11 @@ dag_exec_run_stage_background() {
                 output_count="$(count_result_lines "$check_file" 2>/dev/null || echo 0)"
             fi
             update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "success" "$duration" "$output_count" "$attempt"
-            echo "SUCCESS:$DAG_EXEC_STAGE_ID:$duration:$output_count"
+            echo "SUCCESS:$DAG_EXEC_STAGE_ID:$duration:$output_count:$attempt"
             exit 0
         else
             update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "failed" "$duration" 0 "$attempt"
-            echo "FAILED:$DAG_EXEC_STAGE_ID:$stage_status"
+            echo "FAILED:$DAG_EXEC_STAGE_ID:$stage_status:$attempt"
             exit "$stage_status"
         fi
     ) &
@@ -1120,10 +1120,10 @@ dag_exec_execute() {
     done
     jsonl_parallel_complete "$completed_stages"
 
-    # Determine overall result
+    # Determine overall result - FAIL_FAST returns 1 (not 2) to match test expectations
     if (( fail_fast_triggered )); then
         log_error "DAG execution aborted (FAIL_FAST)"
-        return 2
+        return 1
     elif (( execution_failed )); then
         log_error "DAG execution completed with failures"
         return 1
