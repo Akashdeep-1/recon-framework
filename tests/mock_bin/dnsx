@@ -22,13 +22,20 @@ if [[ -n "${MOCK_SLEEP_DNSX:-}" ]]; then
 fi
 inp=""
 out=""
+dom=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -l) inp="$2"; shift 2 ;;
         -o) out="$2"; shift 2 ;;
+        -d) dom="$2"; shift 2 ;;
         *) shift ;;
     esac
 done
+# Only use fixture data in test mode
+USE_FIXTURE=0
+if [[ "$dom" == "mocktarget.com" || "$dom" == *"mocktarget.com" || "$dom" == "testmanifest.com" || "$dom" == "target.com" || "$dom" == "authorized-target.com" || "$dom" == "stages-test.com" || "$dom" == "skip-test.com" || "$dom" == "failure-test.com" || "$dom" == "retry-test.com" || "$dom" == "resumetarget.com" || "$dom" == "crash-recovery-test.com" || "$dom" == "naabu-ports-test.com" || "$dom" == "reportcheck.com" ]]; then
+    USE_FIXTURE=1
+fi
 if [[ -n "$out" ]]; then
     if [[ -n "$inp" && -f "$inp" ]]; then
         # Echo resolved entries for input

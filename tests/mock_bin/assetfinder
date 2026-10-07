@@ -3,9 +3,31 @@ if [[ "${MOCK_FAIL_ASSETFINDER:-0}" == "1" ]]; then
     echo "Mock assetfinder failure" >&2
     exit 1
 fi
+dom=""
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d) dom="$2"; shift 2 ;;
+        -o) out="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+# Only use fixture data in test mode
+USE_FIXTURE=0
+if [[ "$dom" == "mocktarget.com" || "$dom" == *"mocktarget.com" || "$dom" == "testmanifest.com" || "$dom" == "target.com" || "$dom" == "authorized-target.com" || "$dom" == "stages-test.com" || "$dom" == "skip-test.com" || "$dom" == "failure-test.com" || "$dom" == "retry-test.com" || "$dom" == "resumetarget.com" || "$dom" == "crash-recovery-test.com" || "$dom" == "naabu-ports-test.com" || "$dom" == "reportcheck.com" ]]; then
+    USE_FIXTURE=1
+fi
 MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE="$MOCK_DIR/../fixtures/assetfinder_sample.txt"
-if [[ -f "$FIXTURE" ]]; then
-    grep -v '^#' "$FIXTURE"
+if [[ -n "$out" ]]; then
+    if [[ "$USE_FIXTURE" -eq 1 && -f "$FIXTURE" ]]; then
+        grep -v '^#' "$FIXTURE" > "$out"
+    else
+        : > "$out"
+    fi
+    if [[ -n "$dom" ]]; then
+        echo "sub.${dom}" >> "$out"
+        echo "api.${dom}" >> "$out"
+    fi
 fi
 exit 0
