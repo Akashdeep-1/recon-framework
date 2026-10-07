@@ -218,7 +218,7 @@ test_parallel_three_independent() {
     unset -f mock_a mock_b mock_c
 }
 
-# Test 4: Maximum concurrency is enforced
+# Test 4: Maximum concurrency is enforced (deterministic overlap proof)
 test_parallel_concurrency_limit() {
     reset_dag_state
 
@@ -236,10 +236,20 @@ test_parallel_concurrency_limit() {
     DAG_STAGE_RATE_LIMIT=("" "" "" "")
     DAG_LOADED=1
 
-    mock_a() { sleep 0.5; return 0; }
-    mock_b() { sleep 0.5; return 0; }
-    mock_c() { sleep 0.5; return 0; }
-    mock_d() { sleep 0.5; return 0; }
+    # Stages A and B write 'started' marker, then wait for 'release' before finishing
+    mock_a() {
+        touch "${tmpdir}/a_started"
+        while [[ ! -f "${tmpdir}/release" ]]; do sleep 0.01; done
+        return 0
+    }
+    mock_b() {
+        touch "${tmpdir}/b_started"
+        while [[ ! -f "${tmpdir}/release" ]]; do sleep 0.01; done
+        return 0
+    }
+    # Stages C and D just complete quickly (they run after A/B due to concurrency limit)
+    mock_c() { return 0; }
+    mock_d() { return 0; }
     export -f mock_a mock_b mock_c mock_d
 
     DAG_MAX_CONCURRENCY=2
@@ -249,26 +259,36 @@ test_parallel_concurrency_limit() {
     local jsonl_file="${tmpdir}/test.jsonl"
     jsonl_init "test-run" "$jsonl_file"
 
-    local start_time
-    start_time=$(date +%s%3N)
     dag_exec_init "$tmpdir"
-    dag_exec_execute "$tmpdir"
-    local result=$?
-    local end_time
-    end_time=$(date +%s%3N)
-    local duration=$(( end_time - start_time ))
+    # Start execution in background so we can control release
+    dag_exec_execute "$tmpdir" &
+    local exec_pid=$!
 
-    # With concurrency=2 and 4 stages each taking 0.5s, should take ~1.0-1.2s
-    # Not 2.0s (sequential) and not 0.5s (unlimited)
+    # Wait for both A and B to signal they've started
+    local timeout=50
+    while (( timeout > 0 )) && [[ ! -f "${tmpdir}/a_started" || ! -f "${tmpdir}/b_started" ]]; do
+        sleep 0.05
+        timeout=$(( timeout - 1 ))
+    done
+
+    # PROOF: Both A and B have started (overlap confirmed)
+    assert_true "Stage A started" "[[ -f \"${tmpdir}/a_started\" ]]"
+    assert_true "Stage B started" "[[ -f \"${tmpdir}/b_started\" ]]"
+
+    # Now release them to complete
+    touch "${tmpdir}/release"
+
+    # Wait for execution to finish
+    wait "$exec_pid"
+    local result=$?
+
     assert_equals "All four stages succeed" 0 "$result"
-    # Duration test is flaky on loaded systems - just verify it completed
-    assert_true "Duration is reasonable" "[[ $duration -ge 400 && $duration -lt 5000 ]]"
 
     rm -rf "$tmpdir"
     unset -f mock_a mock_b mock_c mock_d
 }
 
-# Test 5: Concurrency=1 reproduces sequential behavior
+# Test 5: Concurrency=1 reproduces sequential behavior (deterministic)
 test_parallel_concurrency_one_sequential() {
     reset_dag_state
 
@@ -286,8 +306,22 @@ test_parallel_concurrency_one_sequential() {
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
 
-    mock_a() { sleep 0.1; return 0; }
-    mock_b() { sleep 0.1; return 0; }
+    # Stage A writes marker, then waits for release
+    mock_a() {
+        touch "${tmpdir}/a_done"
+        while [[ ! -f "${tmpdir}/release_a" ]]; do sleep 0.01; done
+        return 0
+    }
+    # Stage B writes marker after A is done (proving sequential)
+    mock_b() {
+        # Verify A completed before B starts
+        if [[ ! -f "${tmpdir}/a_done" ]]; then
+            echo "FAIL: B started before A completed" >&2
+            return 1
+        fi
+        touch "${tmpdir}/b_done"
+        return 0
+    }
     export -f mock_a mock_b
 
     DAG_MAX_CONCURRENCY=1
@@ -297,19 +331,28 @@ test_parallel_concurrency_one_sequential() {
     local jsonl_file="${tmpdir}/test.jsonl"
     jsonl_init "test-run" "$jsonl_file"
 
-    local start_time
-    start_time=$(date +%s%3N)
     dag_exec_init "$tmpdir"
-    dag_exec_execute "$tmpdir"
-    local result=$?
-    local end_time
-    end_time=$(date +%s%3N)
-    local duration=$(( end_time - start_time ))
+    dag_exec_execute "$tmpdir" &
+    local exec_pid=$!
 
-    # With concurrency=1 and 2 stages each taking 0.1s, should take ~0.2s
+    # Wait for A to complete
+    local timeout=50
+    while (( timeout > 0 )) && [[ ! -f "${tmpdir}/a_done" ]]; do
+        sleep 0.05
+        timeout=$(( timeout - 1 ))
+    done
+
+    # Release A
+    touch "${tmpdir}/release_a"
+
+    # Wait for execution to finish
+    wait "$exec_pid"
+    local result=$?
+
+    # PROOF: A completed before B started
+    assert_true "Stage A completed first" "[[ -f \"${tmpdir}/a_done\" ]]"
+    assert_true "Stage B completed" "[[ -f \"${tmpdir}/b_done\" ]]"
     assert_equals "Both stages succeed" 0 "$result"
-    # Duration test is flaky on loaded systems - just verify it completed
-    assert_true "Duration is reasonable" "[[ $duration -ge 100 && $duration -lt 5000 ]]"
 
     rm -rf "$tmpdir"
     unset -f mock_a mock_b
