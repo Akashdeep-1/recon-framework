@@ -1161,10 +1161,10 @@ dag_exec_execute() {
     done
     jsonl_parallel_complete "$completed_stages"
 
-    # Determine overall result - FAIL_FAST returns 1 (not 2) to match test expectations
+    # Determine overall result - FAIL_FAST returns 2 (distinct from general failure=1)
     if (( fail_fast_triggered )); then
         log_error "DAG execution aborted (FAIL_FAST)"
-        return 1
+        return 2
     elif (( execution_failed )); then
         log_error "DAG execution completed with failures"
         return 1
