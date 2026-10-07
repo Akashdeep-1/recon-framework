@@ -556,7 +556,7 @@ dag_get_stage_condition() {
 dag_get_stage_failure_policy() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_FAILURE_POLICY[index]:-}"
+    echo "${DAG_STAGE_FAILURE_POLICY[index]:-FAIL_FAST}"
 }
 
 # Get stage parallel group
@@ -598,14 +598,14 @@ dag_get_stage_outputs() {
 dag_get_stage_timeout() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_TIMEOUT[index]:-}"
+    echo "${DAG_STAGE_TIMEOUT[index]:-0}"
 }
 
 # Get stage retries
 dag_get_stage_retries() {
     local index
     index=$(dag_get_stage_index "$1") || return 1
-    echo "${DAG_STAGE_RETRIES[index]:-}"
+    echo "${DAG_STAGE_RETRIES[index]:-0}"
 }
 
 # Get stage rate limit

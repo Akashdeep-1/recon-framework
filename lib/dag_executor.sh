@@ -457,8 +457,40 @@ dag_exec_wait_any_child() {
                     log_error "No stage found for child PID $child_pid at index $child_index"
                     return 1
                 fi
-                DAG_EXEC_CHILD_RESULTS["$completed_stage"]=$child_status
-                log_debug "Child $child_pid (stage $completed_stage) completed with status $child_status"
+                
+                # Read the child's result from the output (if available)
+                # We need to capture stdout from the child - use a result file
+                local result_file="${DAG_EXEC_WORKSPACE}/.dag_child_result_${completed_stage}"
+                local attempt=1
+                if [[ -f "$result_file" ]]; then
+                    local result_line
+                    result_line=$(cat "$result_file" 2>/dev/null)
+                    # Parse: SUCCESS:stage_id:duration:output_count:attempt or FAILED:stage_id:exit_code:attempt
+                    if [[ "$result_line" =~ ^SUCCESS:(.*):(.*):(.*):(.*)$ ]]; then
+                        local s_id="${BASH_REMATCH[1]}"
+                        local duration="${BASH_REMATCH[2]}"
+                        local output_count="${BASH_REMATCH[3]}"
+                        attempt="${BASH_REMATCH[4]}"
+                        DAG_EXEC_CHILD_RESULTS["$completed_stage"]="SUCCESS:0:$attempt:$duration:$output_count"
+                    elif [[ "$result_line" =~ ^FAILED:(.*):(.*):(.*)$ ]]; then
+                        local s_id="${BASH_REMATCH[1]}"
+                        local exit_code="${BASH_REMATCH[2]}"
+                        attempt="${BASH_REMATCH[3]}"
+                        DAG_EXEC_CHILD_RESULTS["$completed_stage"]="FAILED:$exit_code:$attempt:0:0"
+                    else
+                        # Fallback to just exit code
+                        DAG_EXEC_CHILD_RESULTS["$completed_stage"]="FAILED:$child_status:1:0:0"
+                    fi
+                    rm -f "$result_file"
+                else
+                    # No result file, use exit code
+                    if [[ "$child_status" -eq 0 ]]; then
+                        DAG_EXEC_CHILD_RESULTS["$completed_stage"]="SUCCESS:0:1:0:0"
+                    else
+                        DAG_EXEC_CHILD_RESULTS["$completed_stage"]="FAILED:$child_status:1:0:0"
+                    fi
+                fi
+                log_debug "Child $child_pid (stage $completed_stage) completed with result: ${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
 
                 # Remove from active arrays
                 unset 'DAG_EXEC_ACTIVE_PIDS[child_index]'
@@ -488,34 +520,38 @@ dag_exec_wait_all_children() {
 # ============================================
 dag_exec_process_child_result() {
     local stage_id="$1"
-    local child_status="$2"
+    local child_result="$2"
     local workspace="$3"
+    
+    # Parse: SUCCESS:exit_code:attempt:duration:output_count or FAILED:exit_code:attempt:duration:output_count
+    local result_type exit_code attempt duration output_count
+    if [[ "$child_result" =~ ^(SUCCESS|FAILED):([0-9]+):([0-9]+):([0-9]+):([0-9]+)$ ]]; then
+        result_type="${BASH_REMATCH[1]}"
+        exit_code="${BASH_REMATCH[2]}"
+        attempt="${BASH_REMATCH[3]}"
+        duration="${BASH_REMATCH[4]}"
+        output_count="${BASH_REMATCH[5]}"
+    else
+        # Fallback
+        log_error "Unknown child result format: $child_result"
+        return 1
+    fi
 
-    if [[ "$child_status" -eq 0 ]]; then
+    if [[ "$result_type" == "SUCCESS" ]]; then
         # Success - state already set to RUNNING, now set to SUCCESS
-        # We need to update manifest and state
         local stage_label
         stage_label=$(dag_get_stage_label "$stage_id")
-        local check_file
-        local outputs
-        outputs=$(dag_get_stage_outputs "$stage_id")
-        check_file="${workspace}/$(echo "$outputs" | cut -d' ' -f1)"
-        local output_count=0
-        if [[ -f "$check_file" ]]; then
-            output_count="$(count_result_lines "$check_file" 2>/dev/null || echo 0)"
-        fi
-        # Duration calculation would need start time - simplified for now
-        update_stage_manifest "$workspace" "$stage_id" "success" 0 "$output_count" 1
+        update_stage_manifest "$workspace" "$stage_id" "success" "$duration" "$output_count" "$attempt"
         dag_exec_set_state "$stage_id" "$DAG_STATE_SUCCESS"
         log_success "Stage '$stage_label' completed successfully"
-        jsonl_stage_complete "$stage_id" "success" 0 "$output_count"
+        jsonl_stage_complete "$stage_id" "success" "$duration" "$output_count"
         return 0
     else
         # Failure - handle according to policy
         local failure_policy
         failure_policy=$(dag_get_stage_failure_policy "$stage_id")
         dag_exec_handle_failure "$stage_id" "$workspace"
-        return "$child_status"
+        return "$exit_code"
     fi
 }
 
@@ -672,11 +708,15 @@ dag_exec_run_stage_background() {
                 output_count="$(count_result_lines "$check_file" 2>/dev/null || echo 0)"
             fi
             update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "success" "$duration" "$output_count" "$attempt"
-            echo "SUCCESS:$DAG_EXEC_STAGE_ID:$duration:$output_count:$attempt"
+            # Write result to file for parent to read
+            local result_file="${workspace}/.dag_child_result_${DAG_EXEC_STAGE_ID}"
+            echo "SUCCESS:$DAG_EXEC_STAGE_ID:0:$attempt:$duration:$output_count" > "$result_file"
             exit 0
         else
             update_stage_manifest "$workspace" "$DAG_EXEC_STAGE_ID" "failed" "$duration" 0 "$attempt"
-            echo "FAILED:$DAG_EXEC_STAGE_ID:$stage_status:$attempt"
+            # Write result to file for parent to read
+            local result_file="${workspace}/.dag_child_result_${DAG_EXEC_STAGE_ID}"
+            echo "FAILED:$DAG_EXEC_STAGE_ID:$stage_status:$attempt:0:0" > "$result_file"
             exit "$stage_status"
         fi
     ) &
@@ -1065,24 +1105,25 @@ dag_exec_execute() {
         fi
 
         # Process the completed child
-                local completed_stage
-                local child_status
-                for completed_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
-                    child_status="${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
-                    if [[ "$child_status" -eq 0 ]]; then
-                        dag_exec_process_child_result "$completed_stage" "$child_status" "$workspace"
-                    else
-                        dag_exec_handle_failure "$completed_stage" "$workspace"
-                        execution_failed=1
-                        local failure_policy
-                        failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
-                        if [[ "$failure_policy" == "FAIL_FAST" ]]; then
-                            fail_fast_triggered=1
-                        fi
-                    fi
-                    # Clean up the result
-                    unset 'DAG_EXEC_CHILD_RESULTS[$completed_stage]'
-                done
+        local completed_stage
+        local child_result
+        for completed_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
+            child_result="${DAG_EXEC_CHILD_RESULTS[$completed_stage]}"
+            # Parse result: SUCCESS:exit_code:attempt:duration:output_count or FAILED:exit_code:attempt:duration:output_count
+            if [[ "$child_result" =~ ^SUCCESS: ]]; then
+                dag_exec_process_child_result "$completed_stage" "$child_result" "$workspace"
+            else
+                dag_exec_handle_failure "$completed_stage" "$workspace"
+                execution_failed=1
+                local failure_policy
+                failure_policy=$(dag_get_stage_failure_policy "$completed_stage")
+                if [[ "$failure_policy" == "FAIL_FAST" ]]; then
+                    fail_fast_triggered=1
+                fi
+            fi
+            # Clean up the result
+            unset 'DAG_EXEC_CHILD_RESULTS[$completed_stage]'
+        done
 
         if (( fail_fast_triggered )); then
             # Wait for any remaining children before aborting
@@ -1094,11 +1135,11 @@ dag_exec_execute() {
     # Ensure all children are waited on and results processed
     dag_exec_wait_all_children
     local remaining_stage
-    local remaining_status
+    local remaining_result
     for remaining_stage in "${!DAG_EXEC_CHILD_RESULTS[@]}"; do
-        remaining_status="${DAG_EXEC_CHILD_RESULTS[$remaining_stage]}"
-        if [[ "$remaining_status" -eq 0 ]]; then
-            dag_exec_process_child_result "$remaining_stage" "$remaining_status" "$workspace"
+        remaining_result="${DAG_EXEC_CHILD_RESULTS[$remaining_stage]}"
+        if [[ "$remaining_result" =~ ^SUCCESS: ]]; then
+            dag_exec_process_child_result "$remaining_stage" "$remaining_result" "$workspace"
         else
             dag_exec_handle_failure "$remaining_stage" "$workspace"
             execution_failed=1
