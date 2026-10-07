@@ -238,13 +238,13 @@ test_parallel_concurrency_limit() {
 
     # Stages A and B write 'started' marker, then wait for 'release' before finishing
     mock_a() {
-        touch "${tmpdir}/a_started"
-        while [[ ! -f "${tmpdir}/release" ]]; do sleep 0.01; done
+        touch "${DAG_EXEC_WORKSPACE}/a_started"
+        while [[ ! -f "${DAG_EXEC_WORKSPACE}/release" ]]; do sleep 0.01; done
         return 0
     }
     mock_b() {
-        touch "${tmpdir}/b_started"
-        while [[ ! -f "${tmpdir}/release" ]]; do sleep 0.01; done
+        touch "${DAG_EXEC_WORKSPACE}/b_started"
+        while [[ ! -f "${DAG_EXEC_WORKSPACE}/release" ]]; do sleep 0.01; done
         return 0
     }
     # Stages C and D just complete quickly (they run after A/B due to concurrency limit)
@@ -256,6 +256,7 @@ test_parallel_concurrency_limit() {
 
     local tmpdir
     tmpdir=$(mktemp -d)
+    export tmpdir
     local jsonl_file="${tmpdir}/test.jsonl"
     jsonl_init "test-run" "$jsonl_file"
 
@@ -308,18 +309,18 @@ test_parallel_concurrency_one_sequential() {
 
     # Stage A writes marker, then waits for release
     mock_a() {
-        touch "${tmpdir}/a_done"
-        while [[ ! -f "${tmpdir}/release_a" ]]; do sleep 0.01; done
+        touch "${DAG_EXEC_WORKSPACE}/a_done"
+        while [[ ! -f "${DAG_EXEC_WORKSPACE}/release_a" ]]; do sleep 0.01; done
         return 0
     }
     # Stage B writes marker after A is done (proving sequential)
     mock_b() {
         # Verify A completed before B starts
-        if [[ ! -f "${tmpdir}/a_done" ]]; then
+        if [[ ! -f "${DAG_EXEC_WORKSPACE}/a_done" ]]; then
             echo "FAIL: B started before A completed" >&2
             return 1
         fi
-        touch "${tmpdir}/b_done"
+        touch "${DAG_EXEC_WORKSPACE}/b_done"
         return 0
     }
     export -f mock_a mock_b
@@ -328,6 +329,7 @@ test_parallel_concurrency_one_sequential() {
 
     local tmpdir
     tmpdir=$(mktemp -d)
+    export tmpdir
     local jsonl_file="${tmpdir}/test.jsonl"
     jsonl_init "test-run" "$jsonl_file"
 
