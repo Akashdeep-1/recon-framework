@@ -538,8 +538,8 @@ test_dag_exec_empty_dag() {
 test_dag_exec_single_stage() {
     reset_dag_state
 
-    DAG_STAGE_ID=("A")
-    DAG_STAGE_LABEL=("A")
+    DAG_STAGE_ID=("a")
+    DAG_STAGE_LABEL=("a")
     DAG_STAGE_DEPS=("")
     DAG_STAGE_INPUTS=("input")
     DAG_STAGE_OUTPUTS=("output")
@@ -553,7 +553,7 @@ test_dag_exec_single_stage() {
     DAG_LOADED=1
 
     mock_a() { return 0; }
-    export -f mock_A
+    export -f mock_a
 
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -574,8 +574,8 @@ test_dag_exec_single_stage() {
 test_dag_exec_unknown_stage() {
     reset_dag_state
 
-    DAG_STAGE_ID=("A")
-    DAG_STAGE_LABEL=("A")
+    DAG_STAGE_ID=("a")
+    DAG_STAGE_LABEL=("a")
     DAG_STAGE_DEPS=("unknown")
     DAG_STAGE_INPUTS=("input")
     DAG_STAGE_OUTPUTS=("output")
@@ -589,7 +589,7 @@ test_dag_exec_unknown_stage() {
     DAG_LOADED=1
 
     mock_a() { return 0; }
-    export -f mock_A
+    export -f mock_a
 
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -697,8 +697,8 @@ test_dag_exec_manifest_integration() {
     DAG_STAGE_RATE_LIMIT=("" "")
     DAG_LOADED=1
 
-    mock_a() { echo "result" > "${DAG_EXEC_WORKSPACE}/output"; return 0; }
-    mock_b() { echo "result" > "${DAG_EXEC_WORKSPACE}/output"; return 0; }
+    mock_a() { echo "result" > "${tmpdir}/output"; return 0; }
+    mock_b() { echo "result" > "${tmpdir}/output"; return 0; }
     export -f mock_a mock_b
 
     local tmpdir
@@ -712,11 +712,11 @@ test_dag_exec_manifest_integration() {
 
     if command -v jq >/dev/null 2>&1; then
         local a_status
-        a_status=$(jq -r '.stages.A.status' "$manifest_file")
+        a_status=$(jq -r '.stages.a.status' "$manifest_file")
         local b_status
-        b_status=$(jq -r '.stages.B.status' "$manifest_file")
-        assert_equals "Manifest stage A success" "success" "$a_status"
-        assert_equals "Manifest stage B success" "success" "$b_status"
+        b_status=$(jq -r '.stages.b.status' "$manifest_file")
+        assert_equals "Manifest stage a success" "success" "$a_status"
+        assert_equals "Manifest stage b success" "success" "$b_status"
     fi
 
     rm -rf "$tmpdir"
@@ -730,15 +730,48 @@ test_dag_exec_canonical_order() {
     # Load canonical DAG
     dag_load_canonical
 
-    local exec_order=()
-
-    execute_subdomains_stage() { exec_order+=("subdomains"); return 0; }
-    run_dnsx() { exec_order+=("dns"); return 0; }
-    run_naabu() { exec_order+=("ports"); return 0; }
-    execute_live_stage() { exec_order+=("live"); return 0; }
-    run_katana() { exec_order+=("crawling"); return 0; }
-    run_nuclei() { exec_order+=("vuln"); return 0; }
-    execute_reports_stage() { exec_order+=("reports"); return 0; }
+    execute_subdomains_stage() {
+        echo "subdomains" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/subdomains"
+        echo "example.com" > "${tmpdir}/subdomains/all.txt"
+        return 0
+    }
+    run_dnsx() {
+        echo "dns" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/dns"
+        echo "1.2.3.4" > "${tmpdir}/dns/resolved.txt"
+        return 0
+    }
+    run_naabu() {
+        echo "ports" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/ports"
+        echo "80" > "${tmpdir}/ports/web_candidates.txt"
+        return 0
+    }
+    execute_live_stage() {
+        echo "live" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/live"
+        echo "http://example.com" > "${tmpdir}/live/urls.txt"
+        return 0
+    }
+    run_katana() {
+        echo "crawling" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/urls"
+        echo "http://example.com/p" > "${tmpdir}/urls/katana.txt"
+        return 0
+    }
+    run_nuclei() {
+        echo "vuln" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/nuclei"
+        echo "finding" > "${tmpdir}/nuclei/findings.jsonl"
+        return 0
+    }
+    execute_reports_stage() {
+        echo "reports" >> "${tmpdir}/exec_order.txt"
+        mkdir -p "${tmpdir}/reports"
+        echo "report" > "${tmpdir}/reports/summary.md"
+        return 0
+    }
     export -f execute_subdomains_stage run_dnsx run_naabu execute_live_stage run_katana run_nuclei execute_reports_stage
 
     local tmpdir
@@ -746,6 +779,11 @@ test_dag_exec_canonical_order() {
 
     dag_exec_init "$tmpdir"
     dag_exec_execute "$tmpdir"
+
+    local -a exec_order=()
+    if [[ -f "$tmpdir/exec_order.txt" ]]; then
+        mapfile -t exec_order < "$tmpdir/exec_order.txt"
+    fi
 
     assert_equals "Canonical order 1" "subdomains" "${exec_order[0]:-}"
     assert_equals "Canonical order 2" "dns" "${exec_order[1]:-}"
