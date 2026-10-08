@@ -47,6 +47,7 @@ TARGET="mocktarget.com"
 export OUTPUT_DIR
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recon_e2e.XXXXXX" 2>/dev/null || mktemp -d)"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # Run the complete framework against mocktarget.com
 status=0
@@ -103,7 +104,7 @@ assert_true "recon.sh: generates run manifest" \
     test -s "$WORKSPACE/manifest.json"
 
 assert_true "recon.sh: manifest records overall success" \
-    grep -q "\"status\": \"success\"" "$WORKSPACE/manifest.json"
+    grep -q '"status": "success"' "$WORKSPACE/manifest.json"
 
 # Cleanup
 rm -rf "$OUTPUT_DIR"

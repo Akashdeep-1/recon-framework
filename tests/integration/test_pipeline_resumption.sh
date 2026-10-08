@@ -35,6 +35,7 @@ TARGET="resumetarget.com"
 export OUTPUT_DIR
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recon_resume.XXXXXX" 2>/dev/null || mktemp -d)"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # 1. Run pipeline to establish existing state
 bash "$ROOT_DIR/recon.sh" -d "$TARGET" >/dev/null 2>&1

@@ -60,6 +60,7 @@ echo "Running Integration Test: Multi-Target Scope & Workspace Isolation..."
 export OUTPUT_DIR
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recon_multi_iso.XXXXXX" 2>/dev/null || mktemp -d)"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 TARGET_A="domain-alpha.com"
 TARGET_B="domain-beta.org"

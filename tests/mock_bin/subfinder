@@ -12,22 +12,16 @@ while [[ $# -gt 0 ]]; do
         *) shift ;;
     esac
 done
-# Only use fixture data in test mode (when target is mocktarget.com or test targets)
+# Use MOCK_TEST_MODE env var set by test runner
 MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE="$MOCK_DIR/../fixtures/subfinder_sample.txt"
-USE_FIXTURE=0
-if [[ "$dom" == "mocktarget.com" || "$dom" == *"mocktarget.com" || "$dom" == "testmanifest.com" || "$dom" == "target.com" || "$dom" == "authorized-target.com" || "$dom" == "stages-test.com" || "$dom" == "skip-test.com" || "$dom" == "failure-test.com" || "$dom" == "retry-test.com" || "$dom" == "resumetarget.com" || "$dom" == "crash-recovery-test.com" || "$dom" == "naabu-ports-test.com" || "$dom" == "reportcheck.com" ]]; then
-    USE_FIXTURE=1
+if [[ "${MOCK_TEST_MODE:-0}" == "1" && -f "$FIXTURE" ]]; then
+    grep -v '^#' "$FIXTURE" > "$out"
+else
+    : > "$out"
 fi
-if [[ -n "$out" ]]; then
-    if [[ "$USE_FIXTURE" -eq 1 && -f "$FIXTURE" ]]; then
-        grep -v '^#' "$FIXTURE" > "$out"
-    else
-        : > "$out"
-    fi
-    if [[ -n "$dom" ]]; then
-        echo "sub.${dom}" >> "$out"
-        echo "api.${dom}" >> "$out"
-    fi
+if [[ -n "$dom" ]]; then
+    echo "sub.${dom}" >> "$out"
+    echo "api.${dom}" >> "$out"
 fi
 exit 0

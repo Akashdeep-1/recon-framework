@@ -37,6 +37,7 @@ TARGET="failure-test.com"
 export OUTPUT_DIR
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recon_fail.XXXXXX" 2>/dev/null || mktemp -d)"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # 1. Test DNSX failure halts pipeline with non-zero status
 export MOCK_FAIL_DNSX=1

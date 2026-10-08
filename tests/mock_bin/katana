@@ -14,21 +14,15 @@ while [[ $# -gt 0 ]]; do
         *) shift ;;
     esac
 done
-# Only use fixture data in test mode
-USE_FIXTURE=0
-if [[ "$dom" == "mocktarget.com" || "$dom" == *"mocktarget.com" || "$dom" == "testmanifest.com" || "$dom" == "target.com" || "$dom" == "authorized-target.com" || "$dom" == "stages-test.com" || "$dom" == "skip-test.com" || "$dom" == "failure-test.com" || "$dom" == "retry-test.com" || "$dom" == "resumetarget.com" || "$dom" == "crash-recovery-test.com" || "$dom" == "naabu-ports-test.com" || "$dom" == "reportcheck.com" ]]; then
-    USE_FIXTURE=1
-fi
-if [[ -n "$out" ]]; then
-    if [[ -n "$inp" && -f "$inp" ]]; then
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            if [[ -n "$line" ]]; then
-                echo "${line}/api/v1" >> "$out"
-                echo "${line}/login" >> "$out"
-            fi
-        done < "$inp"
-    else
-        : > "$out"
-    fi
+# Use MOCK_TEST_MODE env var set by test runner
+if [[ "${MOCK_TEST_MODE:-0}" == "1" && -n "$inp" && -f "$inp" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ -n "$line" ]]; then
+            echo "${line}/api/v1" >> "$out"
+            echo "${line}/login" >> "$out"
+        fi
+    done < "$inp"
+else
+    : > "$out"
 fi
 exit 0

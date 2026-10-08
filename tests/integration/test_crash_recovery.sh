@@ -64,6 +64,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 TARGET="crash-recovery-test.com"
 export OUTPUT_DIR="$TMP_DIR"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # -------------------------------------------------------------
 # 1. Run stages subdomains,dns to establish initial partial run

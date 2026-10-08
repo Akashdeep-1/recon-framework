@@ -62,6 +62,7 @@ export OUTPUT_DIR
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recon_stages.XXXXXX" 2>/dev/null || mktemp -d)"
 trap 'rm -rf "$OUTPUT_DIR"' EXIT
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # 1. Test running only --stages subdomains,dns
 status=0

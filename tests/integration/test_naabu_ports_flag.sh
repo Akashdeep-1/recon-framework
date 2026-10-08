@@ -68,6 +68,7 @@ echo "Running Integration Test: NAABU_PORTS Normalization (real run_naabu + mock
 
 TARGET="naabu-ports-test.com"
 export PATH="$ROOT_DIR/tests/mock_bin:$PATH"
+export MOCK_TEST_MODE=1
 
 # Minimal resolved-hosts input file in the DNSX "host [ip]" format that
 # run_naabu expects (only the first whitespace-separated field is used as host).

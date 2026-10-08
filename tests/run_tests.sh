@@ -12,6 +12,9 @@ ROOT_DIR="$TEST_DIR/.."
 # Ensure mock binaries are executable across all environments
 chmod +x "$ROOT_DIR"/tests/mock_bin/* 2>/dev/null || true
 
+# Export MOCK_TEST_MODE so mock binaries use fixture data
+export MOCK_TEST_MODE=1
+
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'

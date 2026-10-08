@@ -20,22 +20,16 @@ done
 if [[ -n "${MOCK_NAABU_PORTS_FILE:-}" && -n "$ports_val" ]]; then
     printf '%s' "$ports_val" > "$MOCK_NAABU_PORTS_FILE"
 fi
-# Only use fixture data in test mode
-USE_FIXTURE=0
-if [[ "$dom" == "mocktarget.com" || "$dom" == *"mocktarget.com" || "$dom" == "testmanifest.com" || "$dom" == "target.com" || "$dom" == "authorized-target.com" || "$dom" == "stages-test.com" || "$dom" == "skip-test.com" || "$dom" == "failure-test.com" || "$dom" == "retry-test.com" || "$dom" == "resumetarget.com" || "$dom" == "crash-recovery-test.com" || "$dom" == "naabu-ports-test.com" || "$dom" == "reportcheck.com" ]]; then
-    USE_FIXTURE=1
-fi
+# Use MOCK_TEST_MODE env var set by test runner
 MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE="$MOCK_DIR/../fixtures/naabu_sample.txt"
-if [[ -n "$out" && -f "$FIXTURE" ]]; then
+if [[ "${MOCK_TEST_MODE:-0}" == "1" && -f "$FIXTURE" ]]; then
     if [[ -n "$inp" && ! -f "$inp" ]]; then
         echo "Mock naabu: input file not found: $inp" >&2
         exit 1
     fi
-    if [[ "$USE_FIXTURE" -eq 1 ]]; then
-        cat "$FIXTURE" > "$out"
-    else
-        : > "$out"
-    fi
+    cat "$FIXTURE" > "$out"
+else
+    : > "$out"
 fi
 exit 0
